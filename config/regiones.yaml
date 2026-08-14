@@ -1,0 +1,85 @@
+# Mapeo provincia -> region estadistica del INDEC.
+#
+# El IPC publica seis regiones (Cuadro 5 de docs/metodologia_ipc_nacional_2019.pdf).
+# Cinco se resuelven con la provincia sola. Buenos Aires NO:
+#
+#   GBA      = CABA + los 24 partidos del Gran Buenos Aires
+#   Pampeana = el resto de la provincia de Buenos Aires + Cordoba, Entre Rios,
+#              La Pampa y Santa Fe
+#
+# Juntas pesan el 78,9% del total nacional (GBA 0,447 + Pampeana 0,342), asi que
+# no es un detalle menor: sin poder separarlas, el indice regional no se puede
+# comparar contra el del INDEC.
+#
+# PROBLEMA ABIERTO: staged/observaciones del repo de captura tiene `provincia`
+# pero no `localidad` ni codigo postal. Para resolver Buenos Aires hace falta
+# agregar alla una dimension de sucursales. Hasta entonces, las sucursales
+# bonaerenses caen en `INDETERMINADA` y hay que decidir si se excluyen o se
+# imputan a Pampeana.
+
+version: 1
+
+# Region a la que pertenece cada provincia, por su nombre en el maestro de SEPA.
+provincias:
+  CABA:                   GBA
+  Buenos Aires:           REQUIERE_LOCALIDAD    # se parte entre GBA y Pampeana
+  Córdoba:                Pampeana
+  Entre Ríos:             Pampeana
+  La Pampa:               Pampeana
+  Santa Fe:               Pampeana
+  Corrientes:             Noreste
+  Chaco:                  Noreste
+  Formosa:                Noreste
+  Misiones:               Noreste
+  Catamarca:              Noroeste
+  Jujuy:                  Noroeste
+  La Rioja:               Noroeste
+  Salta:                  Noroeste
+  Santiago del Estero:    Noroeste
+  Tucumán:                Noroeste
+  Mendoza:                Cuyo
+  San Juan:               Cuyo
+  San Luis:               Cuyo
+  Chubut:                 Patagonia
+  Neuquén:                Patagonia
+  Río Negro:              Patagonia
+  Santa Cruz:             Patagonia
+  Tierra del Fuego:       Patagonia
+
+# Los 24 partidos que el INDEC cuenta como GBA. Una sucursal de la provincia de
+# Buenos Aires cuya localidad este en esta lista va a GBA; el resto, a Pampeana.
+partidos_gba:
+  - Almirante Brown
+  - Avellaneda
+  - Berazategui
+  - Esteban Echeverría
+  - Ezeiza
+  - Florencio Varela
+  - General San Martín
+  - Hurlingham
+  - Ituzaingó
+  - José C. Paz
+  - La Matanza
+  - Lanús
+  - Lomas de Zamora
+  - Malvinas Argentinas
+  - Merlo
+  - Moreno
+  - Morón
+  - Quilmes
+  - San Fernando
+  - San Isidro
+  - San Miguel
+  - Tigre
+  - Tres de Febrero
+  - Vicente López
+
+# Peso de cada region sobre el total nacional.
+# Fuente: docs/ponderaciones_regionales.jpeg (Cuadro 6 del documento metodologico).
+pesos_regionales:
+  GBA:        0.447
+  Pampeana:   0.342
+  Noroeste:   0.069
+  Cuyo:       0.052
+  Patagonia:  0.046
+  Noreste:    0.045
