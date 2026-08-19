@@ -1,0 +1,43 @@
+# Parametros del calculo que dependen de la VENTANA TEMPORAL.
+#
+# El metodo es identico para semanas y para meses: mediana por quote, muestra
+# emparejada, Jevons abajo, Laspeyres arriba, encadenamiento. Lo unico que
+# cambia son estos numeros, y por eso viven aca y no como constantes en el
+# codigo: cambiar la ventana no puede requerir tocar el calculo.
+#
+# El indice semanal es DIAGNOSTICO INTERNO. No va a la API ni a ningun
+# dashboard: sirve para ver como se comporta el pipeline antes de que haya dos
+# meses cerrados. Semanal y mensual son dos series paralelas, cada una calculada
+# desde las observaciones diarias. El mensual NO se deriva encadenando semanas:
+# son muestras emparejadas distintas y el resultado no seria el mismo numero.
+
+version: 1
+
+ventanas:
+
+  mensual:
+    # Un mes tiene ~30 dias de captura. Pedir 20 deja afuera al quote que solo
+    # aparecio un puñado de dias, cuya mediana no representa el mes.
+    minimo_dias_quote: 20
+
+    # Banda del tope absoluto, como factor: [1/tope, tope].
+    # Duplicar o partir al medio el precio en un mes es sospechoso. Un digito de
+    # mas al tipear multiplica por 10, asi que x2 lo caza de sobra y deja pasar
+    # aumentos grandes pero legitimos.
+    tope_ratio: 2.0
+
+    umbral_mad: 3.5
+    minimo_quotes_mad: 15
+
+  semanal:
+    # Una semana tiene 7 dias. Pedir 20 dejaria la muestra vacia; 5 de 7 es el
+    # equivalente proporcional y es el default que ya usa el repo de captura.
+    minimo_dias_quote: 5
+
+    # MUCHO mas angosto que el mensual, y es el parametro que mas importa acá:
+    # con 2.0 el filtro no descarta practicamente nada en una semana, porque un
+    # precio rara vez se duplica en 7 dias. 1.4 da la banda [0,714 , 1,4].
+    tope_ratio: 1.4
+
+    umbral_mad: 3.5
+    minimo_quotes_mad: 15

@@ -95,6 +95,47 @@ que hay que reescalarlos sobre lo efectivamente cubierto — si no, una categor�
 Las clases que tienen peso pero no tienen dato **se excluyen del numerador y del
 denominador**: no se asume que se movieron como el promedio.
 
+### Problema abierto: no hay ponderadores por debajo de clase
+
+El INDEC publica pesos hasta **clase** (`01.1.1 Pan y cereales`, 0,0405) y nada más fino.
+Verificado contra `docs/ponderadores_ipc.xls`, que llega exactamente hasta ahí.
+
+Pero Jevons se calcula un nivel más abajo, en las **15 categorías elementales**. Para subir
+de categoría a clase hace falta un peso que **no existe en la fuente**:
+
+| categoría (clase 01.1.1) | productos | quotes |
+|---|---|---|
+| `almacen.fideos_secos_500g` | 404 | 124.219 |
+| `almacen.arroz_largo_fino_1kg` | 20 | 12.532 |
+| `almacen.harina_trigo_000_1kg` | 19 | 13.247 |
+| `almacen.harina_trigo_0000_1kg` | 17 | 10.796 |
+
+Cualquier cosa que se ponga ahí es un supuesto, y **el resultado se mueve**: medido sobre
+2026-W32 → W33, la variación agregada va de **+0,176%** (pesos iguales) a **+0,264%** (por
+cantidad de productos). Casi 0,09 puntos, un 50% del propio número.
+
+Ninguno de los criterios disponibles es un ponderador de verdad:
+
+- **Pesos iguales** — neutro, pero difícilmente la harina 0000 sea un cuarto del gasto en
+  pan y cereales.
+- **Por cantidad de productos** — la variedad mide en cuántas formas viene el producto (los
+  fideos se subdividen en decenas de formas, la harina en dos), no cuánto se compra. Además
+  amplifica errores de clasificación: convierte un regex que agarra de más en un sesgo de
+  metodología.
+- **Por cantidad de quotes** — productos × sucursales: presencia en góndola, no consumo.
+
+**El límite es duro:** un ponderador es participación en el **gasto** (precio × cantidad), y
+SEPA publica precios, no ventas. No hay ningún dato de cantidades. Cualquier peso derivado
+de nuestros propios datos sólo puede aproximar presencia en góndola.
+
+Mientras tanto, `scripts/correr_semanal.py` **reporta los tres criterios y su banda** en vez
+de elegir uno y esconderlo dentro del número.
+
+> **PENDIENTE: buscar una fuente más fina.** Los pesos por clase del INDEC salen de la
+> ENGHo, que releva gasto a un nivel bastante más desagregado del que después publica
+> agregado. Si la microdata tiene apertura por variedad, el supuesto desaparece y no hay que
+> elegir nada. Es lo primero que hay que averiguar antes de publicar un número.
+
 ---
 
 ## Estado de la cobertura
@@ -186,12 +227,25 @@ reales.
 
 ## Lo que falta
 
-- Lector de `quotes_mensuales` desde el bucket.
+- **Ponderadores por debajo de clase**: averiguar si la microdata de la ENGHo tiene apertura
+  por variedad. Hoy hay un supuesto que mueve el resultado ~50% — ver arriba. **Bloquea
+  publicar un número.**
 - Imputación de faltantes (un quote que desaparece 1-2 meses se imputa con la variación de
   su categoría; si falta más de 2, sale de la muestra).
-- Las dos series en paralelo: `precio_lista` y `precio_efectivo`.
+- Revisión a mano de la clasificación: los 987 productos están con `revisado=no`, y el 41%
+  cayó en una sola categoría (`fideos_secos_500g`), lo que sugiere que la regla agarra de
+  más.
 - Los dos juegos de ponderadores (ENGHo 2004/05 y 2017/18) en paralelo.
 - Persistencia en Postgres y la API.
+
+### Ya hecho
+
+- Lector del bucket con caché local (`src/reporte/lectura.py`), incluida la detección de
+  huecos: días ausentes **y** días presentes a los que les falta un comercio.
+- Ventana temporal parametrizable (`src/reporte/periodo.py`): semanal y mensual con el mismo
+  método, sólo cambian dos números de `config/parametros.yaml`.
+- Las dos series en paralelo: `precio_lista` y `precio_efectivo` (`--precio`).
+- Corrida de diagnóstico semanal (`scripts/correr_semanal.py`).
 
 **El índice necesita dos meses cerrados para dar la primera variación.** La captura arrancó
 el 27/07/2026, así que el primer número real sale a principios de octubre.
