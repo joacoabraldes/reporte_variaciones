@@ -125,3 +125,41 @@ categorias:
     articulo: A0121301
     descripcion: Yerba mate
     comparte_con: [bebidas.yerba_mate_500g]
+
+  # ------------------------------------------- ampliacion de cobertura, 2026 --
+  # Estas 8 salieron de mirar que articulos pesan y no estabamos midiendo. La
+  # prioridad la dio esta misma tabla: el indice aplicaba el 100% del peso de
+  # cada clase midiendo una fraccion chica de sus articulos.
+  # El % es el peso del articulo dentro de su clase, region GBA.
+
+  almacen.galletitas_dulces_envasadas:
+    articulo: A0111105
+    descripcion: Galletitas dulces envasadas      # 11,46% de 01.1.1
+
+  lacteos.huevos_gallina:
+    articulo: A0114401
+    descripcion: Huevos de gallina                # 10,65% de 01.1.4
+
+  lacteos.queso_crema_untable:
+    articulo: A0114201
+    descripcion: Queso crema para untar           # 6,64% de 01.1.4
+
+  lacteos.queso_rallado:
+    articulo: A0114209
+    descripcion: Queso rallado                    # 4,35% de 01.1.4
+
+  lacteos.dulce_de_leche:
+    articulo: A0114304
+    descripcion: Dulce de leche                   # 2,16% de 01.1.4
+
+  almacen.mermelada:
+    articulo: A0118203
+    descripcion: Mermeladas, otros dulces y jaleas  # 6,74% de 01.1.8
+
+  almacen.mayonesa:
+    articulo: A0119111
+    descripcion: Mayonesa                         # 11,30% de 01.1.9
+
+  almacen.snacks:
+    articulo: A0119210
+    descripcion: Chizitos, papas fritas, palitos  # 17,68% de 01.1.9

@@ -211,7 +211,7 @@ def test_un_articulo_compartido_no_cuenta_doble_en_la_cobertura():
 def test_el_mapeo_del_repo_es_coherente_con_la_taxonomia():
     """La clase que sale del codigo ENGHo tiene que ser una de las 6 del piloto."""
     mapeo = cargar_mapeo()
-    assert len(mapeo) == 15
+    assert len(mapeo) == 23
     clases = {clase_coicop(s["articulo"]) for s in mapeo.values()}
     assert clases == {"01.1.1", "01.1.4", "01.1.5", "01.1.8", "01.1.9", "01.2.1"}
 
@@ -230,9 +230,9 @@ def test_los_pesos_reales_cierran_y_son_plausibles():
     con = conectar()
     try:
         pesos = calcular("GBA", con=con)
-        # 15 categorias sobre 12 articulos: tres los comparten de a dos.
-        assert len(pesos) == 12
-        assert sum(len(p.categorias) for p in pesos) == 15
+        # 23 categorias sobre 20 articulos: tres los comparten de a dos.
+        assert len(pesos) == 20
+        assert sum(len(p.categorias) for p in pesos) == 23
         assert all(0.0 < p.peso_en_clase <= 1.0 for p in pesos)
 
         por_cat = {c: p for p in pesos for c in p.categorias}

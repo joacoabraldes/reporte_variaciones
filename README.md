@@ -164,26 +164,51 @@ usa para calcular.
 > recomienda explícitamente. Los pesos que salen de acá son participaciones de gasto a
 > precios de 2017/18, sin actualizar.
 
-### Problema abierto: cobertura del gasto dentro de cada clase
+### Cobertura del gasto dentro de cada clase
 
-Al mapear contra la ENGHo quedó a la vista algo que antes no se podía ni medir: **qué
-fracción del gasto de cada clase mide realmente el índice**.
+Al mapear contra la ENGHo quedó a la vista algo que antes no se podía medir: **qué fracción
+del gasto de cada clase mide realmente el índice**. Muestrear es normal en un IPC, pero la
+muestra del INDEC está elegida para ser representativa y la nuestra era lo que se había
+llegado a clasificar.
 
-| clase | cobertura del gasto | peso que se le aplica |
+Con esa tabla como prioridad se agregaron **8 categorías** al repo de captura, elegidas por
+peso y no por facilidad:
+
+| clase | antes | ahora |
 |---|---|---|
-| 01.1.5 Aceites, grasas y manteca | 81,0% | 100% |
-| 01.2.1 Café, té, yerba y cacao | 45,2% | 100% |
-| 01.1.4 Leche, lácteos, huevos | 30,7% | 100% |
-| 01.1.1 Pan y cereales | 17,2% | 100% |
-| 01.1.8 Azúcar, dulces, golosinas | 12,5% | 100% |
-| 01.1.9 Otros alimentos | **3,7%** | 100% |
+| 01.1.5 Aceites, grasas y manteca | 81,0% | 81,0% |
+| 01.1.4 Leche, lácteos, huevos | 30,7% | **54,4%** |
+| 01.2.1 Café, té, yerba y cacao | 45,2% | 45,2% |
+| 01.1.9 Otros alimentos | 3,7% | **32,7%** |
+| 01.1.1 Pan y cereales | 17,2% | **28,6%** |
+| 01.1.8 Azúcar, dulces, golosinas | 12,5% | **19,2%** |
 
-"Otros alimentos" se está representando **con sal fina sola**. Muestrear es normal en un IPC,
-pero la muestra del INDEC está elegida para ser representativa y la nuestra es lo que se
-llegó a clasificar.
+Las nuevas: galletitas dulces envasadas, snacks, mayonesa, huevos, mermelada, queso crema
+untable, queso rallado y dulce de leche. La clasificación pasó de 987 a **2.337 productos**.
 
-La salida buena es priorizar la clasificación por peso, y ahora se sabe hacia dónde: sumar
-queso (15,65% de lácteos) o huevos (10,65%) mueve mucho más que afinar fideos.
+#### Por qué el número cambió tanto
+
+La variación agregada de 2026-W32 → W33 pasó de **+0,24% a +0,56%** al ampliar la cobertura.
+No es un error: `galletitas_dulces_envasadas` dio **+2,13%** esa semana, empujada por un
+grupo coherente de marcas (Rumba, Chocolinas, Mana, Amor, Sonrisas, Coquitas, Macucas) que
+subieron entre 5,7% y 17%. El 75,4% de los quotes de la categoría no se movió y la mediana
+del ratio es exactamente 1, así que el aumento viene de un subconjunto real y no de ruido.
+
+El índice era **ciego a ese aumento** porque no medía galletitas. Es la razón de ampliar
+cobertura, y también la advertencia: mientras queden clases con cobertura baja, el número
+puede estar perdiéndose movimientos igual de grandes.
+
+#### Techo real de "Otros alimentos"
+
+01.1.9 no puede llegar al 100%: el **32% de esa clase** son artículos "Gastos no
+discriminados en alimentos y bebidas", que por definición no tienen un precio de góndola que
+relevar. El techo alcanzable es ~68%.
+
+#### Lo que sigue faltando
+
+En "Pan y cereales", el artículo más pesado es **pan tipo francés fresco (23,6% de la
+clase)** y no se mide: se vende suelto por peso y no aparece en SEPA con presentación
+normalizada. Las facturas y churros (5,8%) tienen el mismo problema.
 
 ---
 
