@@ -208,7 +208,7 @@ class LectorBucket:
         self.cache = Path(cache) if cache else CACHE_DEFAULT
         self.cache.mkdir(parents=True, exist_ok=True)
         self._cliente = cliente
-        self._con = duckdb.connect()
+        self._con = _conectar(self.cache)
 
     # -- acceso al bucket --------------------------------------------------- #
 
@@ -421,6 +421,24 @@ class LectorBucket:
 
     def cerrar(self) -> None:
         self._con.close()
+
+
+def _conectar(cache: Path) -> duckdb.DuckDBPyConnection:
+    """Conexion con directorio temporal.
+
+    Sin `temp_directory` DuckDB no puede derramar a disco y muere por memoria en
+    vez de ponerse lento. Un mes entero de observaciones son decenas de millones
+    de filas: el repo de captura ya se comio ese problema y lo dejo anotado en
+    `index/quotes.py`.
+    """
+    con = duckdb.connect()
+    tmp = cache / "duckdb_tmp"
+    tmp.mkdir(parents=True, exist_ok=True)
+    con.execute(f"SET temp_directory='{tmp.as_posix()}'")
+    # No hace falta conservar el orden de las filas y ahorra memoria en los
+    # scans grandes.
+    con.execute("SET preserve_insertion_order=false")
+    return con
 
 
 def _rango(desde: date, hasta: date) -> list[date]:

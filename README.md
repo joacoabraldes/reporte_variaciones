@@ -95,46 +95,95 @@ que hay que reescalarlos sobre lo efectivamente cubierto — si no, una categor�
 Las clases que tienen peso pero no tienen dato **se excluyen del numerador y del
 denominador**: no se asume que se movieron como el promedio.
 
-### Problema abierto: no hay ponderadores por debajo de clase
+### Ponderadores por debajo de clase: resuelto con la ENGHo
 
-El INDEC publica pesos hasta **clase** (`01.1.1 Pan y cereales`, 0,0405) y nada más fino.
-Verificado contra `docs/ponderadores_ipc.xls`, que llega exactamente hasta ahí.
+El INDEC publica ponderaciones hasta **clase** (`01.1.1 Pan y cereales`) y nada más fino.
+Pero Jevons se calcula un nivel más abajo, en las **categorías elementales**, así que para
+subir de categoría a clase hacía falta un peso que ese archivo no trae. Durante un tiempo se
+usaron **pesos iguales**, un supuesto que movía el resultado agregado alrededor del 50%.
 
-Pero Jevons se calcula un nivel más abajo, en las **15 categorías elementales**. Para subir
-de categoría a clase hace falta un peso que **no existe en la fuente**:
+**El peso existe.** La metodología del IPC (sección 4.2) explica cómo construyó el suyo:
 
-| categoría (clase 01.1.1) | productos | quotes |
+> *"se estimaron partiendo de los gastos de los hogares urbanos de la ENGHo 2004/05 por
+> región y de las variedades que se relevaban en diciembre de 2015. Primero, se procedió a
+> estimar el gasto promedio de los hogares por variedad relevada"*
+
+`src/reporte/ponderadores.py` hace **ese mismo procedimiento** con la encuesta más nueva
+publicada, la **ENGHo 2017/18**, cuyos microdatos el INDEC distribuye completos: 901.804
+registros de gasto de 21.543 hogares, con región y factor de expansión.
+
+La pieza que lo hace posible es que **el código de artículo de la ENGHo es el código COICOP
+de producto**, escrito sin puntos:
+
+```
+ENGHo   A0111101     ->  COICOP  01.1.1.1.01     Facturas y churros
+```
+
+El join es directo y no hace falta tabla de equivalencias. Las seis regiones de la ENGHo son
+además exactamente las seis del IPC.
+
+#### Lo que cambia
+
+| categoría | artículo ENGHo | peso real en su clase | supuesto anterior |
+|---|---|---|---|
+| aceite de girasol | `A0115102` | 48,26% | 33% |
+| yerba mate | `A0121301` | 45,16% | 50% |
+| manteca | `A0115301` | 26,78% | 33% |
+| leche entera | `A0114101` | 16,18% | 20% |
+| azúcar | `A0118101` | 12,51% | 100% |
+| fideos secos | `A0111304` | 9,33% | 25% |
+| arroz blanco | `A0111201` | 5,08% | 25% |
+| sal fina | `A0119101` | 3,70% | 100% |
+| harina de trigo | `A0111210` | 2,78% | 50% |
+
+Ninguno de los criterios que se habían probado acertaba: para fideos, pesos iguales daba
+25%, por cantidad de productos 87,8%, y el real es **9,33%**.
+
+El mapeo vive en [`config/mapeo_categorias_engho.yaml`](config/mapeo_categorias_engho.yaml),
+versionado y revisable.
+
+#### La unidad de cálculo es el artículo, no la categoría
+
+Tres artículos cubren dos categorías nuestras cada uno (harina 000/0000, yerba 500 g/1 kg,
+yogur firme/bebible) porque el INDEC no los separa. **No se reparte el peso entre ellas.**
+
+El nivel elemental de un índice es, por definición, el agrupamiento más chico que tiene
+ponderación asignada — es literalmente cómo el INDEC define "variedad". Si el peso llega
+hasta "harina de trigo", ahí está el nivel elemental: los quotes de las dos categorías entran
+a **una sola media geométrica** y sale un solo índice para el artículo.
+
+Repartir habría sido inventar un dato que la fuente no tiene. Pooleando, el peso relativo
+entre las dos sale solo —por cuántos ratios aporta cada una dentro del Jevons— y queda en el
+espacio geométrico, en vez de combinarse por fuera con una media aritmética.
+
+Las categorías se siguen reportando por separado en el diagnóstico; lo que cambia es qué se
+usa para calcular.
+
+> **PENDIENTE: actualizar por precios.** Laspeyres pide que el período de referencia de los
+> ponderadores coincida con el de la base de precios, y el propio documento del INDEC lo
+> recomienda explícitamente. Los pesos que salen de acá son participaciones de gasto a
+> precios de 2017/18, sin actualizar.
+
+### Problema abierto: cobertura del gasto dentro de cada clase
+
+Al mapear contra la ENGHo quedó a la vista algo que antes no se podía ni medir: **qué
+fracción del gasto de cada clase mide realmente el índice**.
+
+| clase | cobertura del gasto | peso que se le aplica |
 |---|---|---|
-| `almacen.fideos_secos_500g` | 404 | 124.219 |
-| `almacen.arroz_largo_fino_1kg` | 20 | 12.532 |
-| `almacen.harina_trigo_000_1kg` | 19 | 13.247 |
-| `almacen.harina_trigo_0000_1kg` | 17 | 10.796 |
+| 01.1.5 Aceites, grasas y manteca | 81,0% | 100% |
+| 01.2.1 Café, té, yerba y cacao | 45,2% | 100% |
+| 01.1.4 Leche, lácteos, huevos | 30,7% | 100% |
+| 01.1.1 Pan y cereales | 17,2% | 100% |
+| 01.1.8 Azúcar, dulces, golosinas | 12,5% | 100% |
+| 01.1.9 Otros alimentos | **3,7%** | 100% |
 
-Cualquier cosa que se ponga ahí es un supuesto, y **el resultado se mueve**: medido sobre
-2026-W32 → W33, la variación agregada va de **+0,176%** (pesos iguales) a **+0,264%** (por
-cantidad de productos). Casi 0,09 puntos, un 50% del propio número.
+"Otros alimentos" se está representando **con sal fina sola**. Muestrear es normal en un IPC,
+pero la muestra del INDEC está elegida para ser representativa y la nuestra es lo que se
+llegó a clasificar.
 
-Ninguno de los criterios disponibles es un ponderador de verdad:
-
-- **Pesos iguales** — neutro, pero difícilmente la harina 0000 sea un cuarto del gasto en
-  pan y cereales.
-- **Por cantidad de productos** — la variedad mide en cuántas formas viene el producto (los
-  fideos se subdividen en decenas de formas, la harina en dos), no cuánto se compra. Además
-  amplifica errores de clasificación: convierte un regex que agarra de más en un sesgo de
-  metodología.
-- **Por cantidad de quotes** — productos × sucursales: presencia en góndola, no consumo.
-
-**El límite es duro:** un ponderador es participación en el **gasto** (precio × cantidad), y
-SEPA publica precios, no ventas. No hay ningún dato de cantidades. Cualquier peso derivado
-de nuestros propios datos sólo puede aproximar presencia en góndola.
-
-Mientras tanto, `scripts/correr_semanal.py` **reporta los tres criterios y su banda** en vez
-de elegir uno y esconderlo dentro del número.
-
-> **PENDIENTE: buscar una fuente más fina.** Los pesos por clase del INDEC salen de la
-> ENGHo, que releva gasto a un nivel bastante más desagregado del que después publica
-> agregado. Si la microdata tiene apertura por variedad, el supuesto desaparece y no hay que
-> elegir nada. Es lo primero que hay que averiguar antes de publicar un número.
+La salida buena es priorizar la clasificación por peso, y ahora se sabe hacia dónde: sumar
+queso (15,65% de lácteos) o huevos (10,65%) mueve mucho más que afinar fideos.
 
 ---
 
@@ -246,6 +295,23 @@ reales.
   método, sólo cambian dos números de `config/parametros.yaml`.
 - Las dos series en paralelo: `precio_lista` y `precio_efectivo` (`--precio`).
 - Corrida de diagnóstico semanal (`scripts/correr_semanal.py`).
+- **Reconciliación contra el repo de captura** (`scripts/reconciliar_mensual.py`). Es la
+  única validación que no usa datos sintéticos: calcula los quotes de un mes acá y los cruza
+  contra `staged/quotes_mensuales/`, que produce `relevamiento_precios` con otro código.
+
+  | corrida | quotes | diferencias |
+  |---|---|---|
+  | 2026-07, `precio_lista` | 464.810 | **0** |
+  | 2026-07, `precio_efectivo` | 464.810 | **0** |
+  | 2026-08, `precio_lista` | 466.380 | **0** |
+
+  Coinciden la clave, la mediana y el conteo de días, en todos los quotes. De paso quedó
+  resuelto que `id_bandera` no parte quotes: agrupar por 3 campos o por 4 da el mismo total
+  (15.140.643), así que la clave `(id_comercio, id_sucursal, id_producto)` es correcta.
+
+  Valida el **colapso a quotes**, no el índice: Jevons, Laspeyres y el encadenamiento siguen
+  respaldados solo por los tests con resultado calculado a mano, que es lo que corresponde
+  porque no hay contra qué compararlos.
 
 **El índice necesita dos meses cerrados para dar la primera variación.** La captura arrancó
 el 27/07/2026, así que el primer número real sale a principios de octubre.

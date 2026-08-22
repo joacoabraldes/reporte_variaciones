@@ -1,0 +1,127 @@
+# Categoria elemental nuestra -> articulo de la ENGHo 2017/18.
+#
+# ESTE ARCHIVO REEMPLAZA UN SUPUESTO POR UN DATO.
+#
+# Jevons se calcula en categorias elementales, un nivel por debajo de donde el
+# INDEC publica ponderaciones (que llegan hasta clase, 01.1.1). Para subir de
+# categoria a clase haciamos falta un peso que no teniamos, y se usaban pesos
+# iguales: un supuesto que movia el resultado agregado ~50%.
+#
+# El peso si existe: los microdatos de la ENGHo 2017/18 traen el gasto de 21.543
+# hogares codificado por ARTICULO, y el codigo de articulo de la ENGHo es el
+# codigo COICOP de producto escrito distinto:
+#
+#     ENGHo   A0111101   = Facturas y churros
+#     COICOP  01.1.1.1.01  Facturas y churros
+#
+# Con este mapeo, `ponderadores.py` calcula el peso de cada categoria como el
+# INDEC calcula el suyo: gasto promedio de los hogares por articulo y region,
+# expandido por el factor de la encuesta.
+#
+# --- Por que ENGHo 2017/18 y no 2004/05 --------------------------------------
+# Los ponderadores vigentes del INDEC (base diciembre 2016) estan hechos con la
+# ENGHo 2004/05. La 2017/18 es la encuesta mas nueva publicada. No estamos
+# copiando el ponderador del INDEC: estamos rehaciendo su procedimiento con la
+# fuente mas reciente.
+#
+# --- Articulos compartidos ---------------------------------------------------
+# Tres articulos de la ENGHo cubren dos categorias nuestras cada uno, porque el
+# INDEC no los separa: la harina 000 y la 0000 son "Harina de trigo", la yerba
+# de 500 g y la de 1 kg son "Yerba mate", y el yogur firme y el bebible son
+# "Yogur natural o saborizado".
+#
+# NO se reparte el peso entre ellas. El nivel elemental de un indice es el
+# agrupamiento mas chico que tiene ponderacion asignada — es la definicion de
+# "variedad" del INDEC. Si el peso llega hasta "harina de trigo", ahi esta el
+# nivel elemental: los quotes de las dos categorias entran a UNA sola media
+# geometrica y sale un solo indice para el articulo.
+#
+# Repartir habria sido inventar un dato que la fuente no tiene. Pooleando, el
+# peso relativo entre las dos sale solo, por cuantos ratios aporta cada una
+# dentro del Jevons, y queda en el espacio geometrico en vez de combinarse por
+# afuera con una media aritmetica.
+#
+# `comparte_con` es informativo: sirve para que se vea en el diff quien comparte
+# con quien. El calculo agrupa por `articulo`.
+#
+# --- Como se revisa ----------------------------------------------------------
+# `articulo` tiene que existir en docs/engho/engho2018_articulos.zip y su clase
+# tiene que coincidir con la clase COICOP de la categoria en la taxonomia del
+# repo de captura. `ponderadores.py` valida las dos cosas y falla si no.
+
+version: 1
+
+fuente: ENGHo 2017/2018 - INDEC, base de gastos de consumo de los hogares
+articulos: docs/engho/engho2018_articulos.zip
+gastos: docs/engho/engho2018_gastos.zip
+
+categorias:
+
+  # ---------------------------------------------------------------- lacteos --
+  lacteos.leche_entera_1l:
+    articulo: A0114101
+    descripcion: Leche comun entera
+
+  lacteos.leche_descremada_1l:
+    articulo: A0114102
+    descripcion: Leche comun descremada
+
+  lacteos.yogur_firme_pote:
+    articulo: A0114302
+    descripcion: Yogur natural o saborizado
+    comparte_con: [lacteos.yogur_bebible_litro]
+
+  lacteos.yogur_bebible_litro:
+    articulo: A0114302
+    descripcion: Yogur natural o saborizado
+    comparte_con: [lacteos.yogur_firme_pote]
+
+  lacteos.manteca_200g:
+    articulo: A0115301
+    descripcion: Manteca
+
+  # ---------------------------------------------------------------- almacen --
+  almacen.aceite_girasol_900ml:
+    articulo: A0115102
+    descripcion: Aceite de girasol
+
+  almacen.aceite_mezcla_900ml:
+    articulo: A0115101
+    descripcion: Aceite mezcla
+
+  almacen.harina_trigo_000_1kg:
+    articulo: A0111210
+    descripcion: Harina de trigo
+    comparte_con: [almacen.harina_trigo_0000_1kg]
+
+  almacen.harina_trigo_0000_1kg:
+    articulo: A0111210
+    descripcion: Harina de trigo
+    comparte_con: [almacen.harina_trigo_000_1kg]
+
+  almacen.arroz_largo_fino_1kg:
+    articulo: A0111201
+    descripcion: Arroz blanco
+
+  almacen.fideos_secos_500g:
+    articulo: A0111304
+    descripcion: Fideos secos
+
+  almacen.azucar_comun_1kg:
+    articulo: A0118101
+    descripcion: Azucar
+
+  almacen.sal_fina_500g:
+    articulo: A0119101
+    descripcion: Sal fina
+
+  # ---------------------------------------------------------------- bebidas --
+  bebidas.yerba_mate_500g:
+    articulo: A0121301
+    descripcion: Yerba mate
+    comparte_con: [bebidas.yerba_mate_1kg]
+
+  bebidas.yerba_mate_1kg:
+    articulo: A0121301
+    descripcion: Yerba mate
+    comparte_con: [bebidas.yerba_mate_500g]

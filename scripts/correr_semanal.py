@@ -45,6 +45,14 @@ from reporte.elemental import (  # noqa: E402
     indice_elemental,
 )
 from reporte.lectura import LectorBucket  # noqa: E402
+from reporte.ponderadores import (  # noqa: E402
+    articulo_de_categoria,
+    clase_coicop,
+    calcular as calcular_pesos_engho,
+    cobertura_por_clase,
+    conectar as conectar_engho,
+    pesos_de_articulos,
+)
 from reporte.periodo import (  # noqa: E402
     SEMANAL,
     ClaveQuote,
@@ -82,15 +90,21 @@ def cargar_ponderadores(region: str) -> dict[str, tuple[str, float]]:
 # --------------------------------------------------------------------------- #
 
 
-def agrupar_por_categoria(
-    precios: dict[ClaveQuote, float], categoria_de: dict[str, str]
+def agrupar(
+    precios: dict[ClaveQuote, float], clave_de_producto: dict[str, str]
 ) -> dict[str, dict[ClaveQuote, float]]:
-    """Parte los quotes segun la categoria elemental de su producto."""
+    """Parte los quotes segun la clave de agrupacion de su producto.
+
+    Se usa dos veces con claves distintas: por CATEGORIA para el reporte de
+    diagnostico, y por ARTICULO de la ENGHo para el calculo. No son lo mismo:
+    tres articulos cubren dos categorias nuestras cada uno, y el nivel elemental
+    del indice es el articulo, que es donde hay ponderacion.
+    """
     grupos: dict[str, dict[ClaveQuote, float]] = defaultdict(dict)
     for clave, precio in precios.items():
-        cat = categoria_de.get(clave[2])
-        if cat:
-            grupos[cat][clave] = precio
+        k = clave_de_producto.get(clave[2])
+        if k:
+            grupos[k][clave] = precio
     return grupos
 
 
@@ -98,43 +112,45 @@ def agrupar_por_categoria(
 # El supuesto de ponderacion por debajo de clase
 # --------------------------------------------------------------------------- #
 
-# El INDEC publica pesos hasta CLASE (01.1.1) y nada mas fino; verificado contra
-# docs/ponderadores_ipc.xls, que llega hasta ahi. Pero Jevons se calcula un nivel
-# mas abajo, en las 15 categorias elementales, asi que para subir de categoria a
-# clase hace falta un peso que NO EXISTE en la fuente.
+# El INDEC publica pesos hasta CLASE (01.1.1) y nada mas fino. Pero Jevons se
+# calcula un nivel mas abajo, en las 15 categorias elementales, asi que para
+# subir de categoria a clase hace falta un peso que ese archivo no trae.
 #
-# Cualquier cosa que se ponga ahi es un supuesto. En vez de elegir uno y que
-# quede invisible dentro del numero, se calcula el indice con los tres y se
-# reporta la banda: asi el que lee ve cuanto del resultado es dato y cuanto es
-# supuesto.
+# RESUELTO: el peso existe en los microdatos de la ENGHo 2017/18, que el INDEC
+# publica completos. El codigo de articulo de la ENGHo es el codigo COICOP de
+# producto, asi que el join es directo. Ver `reporte/ponderadores.py`.
 #
-# Ninguno es correcto:
+# Los tres criterios viejos se conservan como banda de sensibilidad: muestran
+# cuanto se habria equivocado el numero cuando eran lo unico que habia.
 #   iguales    neutro, pero dificilmente la harina 0000 sea un cuarto del gasto
 #              en pan y cereales.
-#   productos  la variedad mide en cuantas formas viene el producto (los fideos
-#              se subdividen en mil formas, la harina en dos), no cuanto se
-#              compra. Ademas amplifica errores de clasificacion.
+#   productos  la variedad mide en cuantas formas viene el producto, no cuanto
+#              se compra, y amplifica errores de clasificacion.
 #   quotes     productos x sucursales: presencia en gondola, no consumo.
-#
-# Un ponderador es participacion en el GASTO (precio x cantidad) y SEPA no
-# publica cantidades. Sin una fuente externa mas fina, esto no se resuelve.
-# PENDIENTE: ver si la microdata de la ENGHo tiene apertura por variedad.
 
-CRITERIOS = ("iguales", "productos", "quotes")
+# `engho` es el unico que es un DATO; los otros tres son supuestos y quedan
+# como banda de sensibilidad, para poder ver cuanto se habria equivocado el
+# numero antes de tenerlo.
+CRITERIOS = ("engho", "iguales", "productos", "quotes")
 
 DESCRIPCION_CRITERIO = {
-    "iguales": "pesos iguales dentro de la clase",
-    "productos": "por cantidad de productos clasificados",
-    "quotes": "por cantidad de quotes emparejados",
+    "engho": "gasto de los hogares, ENGHo 2017/18  <-- DATO",
+    "iguales": "pesos iguales dentro de la clase (supuesto)",
+    "productos": "por cantidad de productos clasificados (supuesto)",
+    "quotes": "por cantidad de quotes emparejados (supuesto)",
 }
 
 
-def pesos_de_categoria(
+def pesos_de_criterio(
     criterio: str,
     categorias,
     n_productos: dict[str, int],
     n_quotes: dict[str, int],
+    engho: dict[str, float] | None = None,
 ) -> dict[str, float]:
+    if criterio == "engho":
+        # Una categoria sin peso en la ENGHo queda en cero: no se le inventa uno.
+        return {c: (engho or {}).get(c, 0.0) for c in categorias}
     if criterio == "iguales":
         return {c: 1.0 for c in categorias}
     if criterio == "productos":
@@ -282,7 +298,7 @@ def _correr(args) -> int:
         print("\nhacen falta al menos 2 periodos completos para una variacion")
         return 1
 
-    # -- 3. quotes por periodo ---------------------------------------------- #
+    # -- 4. quotes por periodo ---------------------------------------------- #
 
     productos = lector.productos_clasificados()
     clasif = {
@@ -294,18 +310,58 @@ def _correr(args) -> int:
     categoria_de = {k: v[0] for k, v in clasif.items()}
     clase_de_categoria = {v[0]: v[1] for v in clasif.values()}
 
-    # Cuantos productos distintos tiene cada categoria: uno de los criterios de
+    # id_producto -> articulo de la ENGHo, componiendo con la categoria. Es la
+    # clave de agrupacion del calculo: el nivel elemental es el articulo.
+    art_de_cat = articulo_de_categoria()
+    articulo_de = {
+        p: art_de_cat[c] for p, (c, _) in clasif.items() if c in art_de_cat
+    }
+    sin_articulo = {c for c, _ in clasif.values()} - set(art_de_cat)
+    if sin_articulo:
+        raise SystemExit(
+            "estas categorias no tienen articulo en config/mapeo_categorias_engho.yaml: "
+            + ", ".join(sorted(sin_articulo))
+        )
+
+    # Cuantos productos distintos tiene cada articulo: uno de los criterios de
     # ponderacion que se contrastan mas abajo.
-    n_productos: dict[str, int] = defaultdict(int)
-    for categoria, _ in clasif.values():
-        n_productos[categoria] += 1
+    n_prod_art: dict[str, int] = defaultdict(int)
+    for producto, (categoria, _) in clasif.items():
+        n_prod_art[art_de_cat[categoria]] += 1
+
+    # -- ponderadores de la ENGHo (el dato que reemplaza al supuesto) ------- #
+
+    con_engho = conectar_engho()
+    try:
+        pesos_art_engho = calcular_pesos_engho(args.region, con=con_engho)
+        pesos_engho = pesos_de_articulos(pesos_art_engho)
+        cobertura = cobertura_por_clase(pesos_art_engho, con=con_engho)
+    finally:
+        con_engho.close()
 
     obs = lector.observaciones(
         min(inv.dias_presentes), max(inv.dias_presentes),
         productos=productos, inventario=inv,
     )
 
-    titulo("3. QUOTES POR PERIODO")
+    titulo("3. COBERTURA DEL GASTO (ENGHo 2017/18)")
+    print("Que fraccion del gasto de cada clase mide el indice. Hoy se aplica el")
+    print("100% del peso de cada clase midiendo solo una parte de sus articulos.")
+    print()
+    print(f"{'clase':<8} {'cubierto':>10} {'categorias':>12} {'articulos':>11}")
+    print("-" * ANCHO)
+    for clase in sorted(cobertura):
+        c = cobertura[clase]
+        print(f"{clase:<8} {c.pct:>9.1f}% {c.n_categorias:>12} "
+              f"{c.n_articulos_clase:>11}")
+    print()
+    print(f"{'articulo':<10} {'peso en su clase':>17}   categorias que lo miden")
+    print("-" * ANCHO)
+    for pa in sorted(pesos_art_engho, key=lambda x: -x.peso_en_clase):
+        print(f"{pa.articulo:<10} {pa.peso_en_clase*100:>16.2f}%   "
+              f"{', '.join(pa.categorias)}")
+
+    titulo("4. QUOTES POR PERIODO")
     print(f"{'periodo':<12} {'con dato':>12} {'sin min dias':>14} {'dias':>6} {'huecos':>8}")
     print("-" * ANCHO)
     resultados = {}
@@ -315,7 +371,7 @@ def _correr(args) -> int:
         print(f"{per.etiqueta:<12} {q.n_quotes:>12,} {q.n_descartados:>14,} "
               f"{len(q.dias_presentes):>6} {len(q.huecos):>8}")
 
-    # -- 4. variacion periodo contra periodo -------------------------------- #
+    # -- 5. variacion periodo contra periodo -------------------------------- #
 
     pond = cargar_ponderadores(args.region)
     variaciones: list[VariacionPeriodo] = []
@@ -324,7 +380,7 @@ def _correr(args) -> int:
         q_base = resultados[base_per.etiqueta]
         q_act = resultados[act_per.etiqueta]
 
-        titulo(f"4. {base_per.etiqueta} -> {act_per.etiqueta}")
+        titulo(f"5. {base_per.etiqueta} -> {act_per.etiqueta}")
 
         emparejados = set(q_base.precios) & set(q_act.precios)
         print(f"quotes en {base_per.etiqueta:<10} {len(q_base.precios):>12,}")
@@ -332,10 +388,13 @@ def _correr(args) -> int:
         print(f"EMPAREJADOS (los que cuentan) {len(emparejados):>12,}  "
               f"({100*len(emparejados)/max(len(q_act.precios),1):.1f}% del actual)")
 
-        g_base = agrupar_por_categoria(q_base.precios, categoria_de)
-        g_act = agrupar_por_categoria(q_act.precios, categoria_de)
+        g_base = agrupar(q_base.precios, categoria_de)
+        g_act = agrupar(q_act.precios, categoria_de)
 
-        # -- por categoria elemental --
+        # -- por categoria elemental: SOLO DIAGNOSTICO --
+        # El calculo no usa estos indices. La unidad del indice es el articulo
+        # de la ENGHo, que es donde hay ponderacion; estas filas estan para
+        # poder ver que hizo cada categoria por separado.
         print()
         print(f"{'categoria':<34} {'quotes':>8} {'var %':>9} {'tope':>6} {'MAD':>6} "
               f"{'umbral':>10}")
@@ -370,32 +429,53 @@ def _correr(args) -> int:
             if res.n_quotes < parametros.minimo_quotes_mad:
                 flacas.append((cat, res.n_quotes))
 
-        # -- categorias -> clase COICOP (Laspeyres, con el peso que no existe) --
+        # -- EL CALCULO: un Jevons por ARTICULO de la ENGHo -------------- #
+        # Tres articulos cubren dos categorias nuestras cada uno. Como el peso
+        # no las distingue, tampoco las distingue el calculo: sus quotes entran
+        # a la MISMA media geometrica. Asi el peso relativo entre las dos sale
+        # solo, por cuantos ratios aporta cada una, sin elegir un criterio de
+        # reparto y sin salir del espacio geometrico.
+        ga_base = agrupar(q_base.precios, articulo_de)
+        ga_act = agrupar(q_act.precios, articulo_de)
+
+        indices_art: dict[str, float] = {}
+        n_quotes_art: dict[str, int] = {}
+        for art in sorted(set(ga_base) | set(ga_act)):
+            res = indice_elemental(
+                art, ga_base.get(art, {}), ga_act.get(art, {}),
+                umbral_mad=parametros.umbral_mad,
+                tope_ratio=parametros.tope_ratio,
+                minimo_quotes=parametros.minimo_quotes_mad,
+            )
+            if res.indice is not None:
+                indices_art[art] = res.indice
+                n_quotes_art[art] = res.n_quotes
+
+        clase_de_articulo = {a: clase_coicop(a) for a in indices_art}
         cuenta_cats = defaultdict(int)
-        for cat in indices_cat:
-            if cat in clase_de_categoria:
-                cuenta_cats[clase_de_categoria[cat]] += 1
+        for art in indices_art:
+            cuenta_cats[clase_de_articulo[art]] += 1
 
         por_criterio: dict[str, dict[str, float]] = {}
         for criterio in CRITERIOS:
-            pesos_cat = pesos_de_categoria(
-                criterio, indices_cat, n_productos, n_quotes_cat
+            pesos_art = pesos_de_criterio(
+                criterio, indices_art, n_prod_art, n_quotes_art, pesos_engho
             )
             por_criterio[criterio] = agregar_categorias_a_clases(
-                indices_cat, clase_de_categoria, pesos_cat
+                indices_art, clase_de_articulo, pesos_art
             )
-        indices_clase = por_criterio["iguales"]
+        indices_clase = por_criterio["engho"]
 
         print()
-        print(f"{'clase COICOP':<40} {'peso':>7} {'iguales':>9} {'x prod':>9} "
-              f"{'x quotes':>9} {'cats':>5}")
+        print(f"{'clase COICOP':<36} {'peso':>7} {'ENGHo':>9} {'iguales':>9} "
+              f"{'x prod':>9} {'x quotes':>9} {'arts':>5}")
         print("-" * ANCHO)
         for clase in sorted(indices_clase):
             nombre, peso = pond.get(clase, (clase, 0.0))
             vals = "".join(
                 f"{(por_criterio[c][clase]-1)*100:>+9.3f}" for c in CRITERIOS
             )
-            print(f"{clase} {nombre[:34]:<34} {peso:>7.4f}{vals} "
+            print(f"{clase} {nombre[:30]:<30} {peso:>7.4f}{vals} "
                   f"{cuenta_cats[clase]:>5}")
 
         # -- clases -> nivel del indice (Laspeyres con pesos del INDEC) --
@@ -406,7 +486,7 @@ def _correr(args) -> int:
             c: agregar("PILOTO", "Cobertura del piloto", por_criterio[c], pesos_universo)
             for c in CRITERIOS
         }
-        agregado = agregados["iguales"]
+        agregado = agregados["engho"]
 
         print()
         if agregado.indice is None:
@@ -449,31 +529,29 @@ def _correr(args) -> int:
             for cat, n in flacas:
                 print(f"  {cat:<40} {n:>6,}")
 
-    # -- 5. serie encadenada ------------------------------------------------ #
+    # -- 6. serie encadenada ------------------------------------------------ #
 
     if len(variaciones) >= 1:
-        titulo("5. SERIE ENCADENADA")
+        titulo("6. SERIE ENCADENADA")
         print("(diagnostico interno: NO es una serie publicable)")
         print()
         for etiqueta, nivel in serie_encadenada(variaciones, base=100.0):
             print(f"  {etiqueta:<12} {nivel:>10.4f}")
 
-    # -- 6. lo que hay que mirar -------------------------------------------- #
+    # -- 7. lo que hay que mirar -------------------------------------------- #
 
-    titulo("6. ADVERTENCIAS")
+    titulo("7. ADVERTENCIAS")
     print("- Meses incompletos: julio y agosto no estan cerrados. Esto NO es el")
     print("  indice mensual y no se deriva encadenando estas semanas.")
-    print("- PONDERADORES POR DEBAJO DE CLASE: el INDEC llega hasta 01.1.1 y no")
-    print("  publica nada mas fino (verificado contra docs/ponderadores_ipc.xls).")
-    print("  Para subir de categoria elemental a clase hace falta un peso que NO")
-    print("  EXISTE en la fuente, asi que se reportan los tres criterios y su")
-    print("  banda. El numero de arriba usa 'pesos iguales' por convencion.")
-    print("  Ninguno de los tres es un ponderador de verdad: un ponderador es")
-    print("  participacion en el GASTO (precio x cantidad) y SEPA no publica")
-    print("  cantidades vendidas.")
-    print("  PENDIENTE: buscar una fuente mas fina. La microdata de la ENGHo")
-    print("  releva gasto a un nivel mas desagregado del que despues se publica;")
-    print("  si tiene apertura por variedad, el supuesto desaparece.")
+    print("- Ponderadores por debajo de clase: RESUELTO. Salen del gasto de los")
+    print("  hogares de la ENGHo 2017/18 (microdatos publicos del INDEC), con el")
+    print("  mismo procedimiento que uso el INDEC para los suyos. Los otros tres")
+    print("  criterios quedan arriba como banda de sensibilidad.")
+    print("  PENDIENTE: los pesos son gasto a precios 2017/18 y Laspeyres pide")
+    print("  que coincidan con la base de precios. Falta actualizarlos por la")
+    print("  evolucion de los precios hasta la base.")
+    print("- COBERTURA DEL GASTO: mirar la seccion 3b. El indice aplica el 100%")
+    print("  del peso de cada clase midiendo solo una parte de sus articulos.")
     print("- Region: se usan los ponderadores de", args.region, "para todo el pais.")
     print("  El corte regional real necesita la localidad de cada sucursal.")
     print("- Clasificacion: 100% automatica, ningun producto revisado a mano.")
