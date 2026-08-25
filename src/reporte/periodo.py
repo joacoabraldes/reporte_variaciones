@@ -104,33 +104,40 @@ class Periodo:
         return self.etiqueta
 
 
-def semanas_iso_completas(desde: date, hasta: date) -> list[Periodo]:
-    """Semanas ISO que entran **enteras** en el rango de dias disponibles.
+def semanas_iso_completas(dias) -> list[Periodo]:
+    """Semanas ISO que tienen sus **7 dias presentes** en `dias`.
+
+    Recibe los dias que hay, no un rango. La diferencia no es cosmetica: una
+    version anterior comprobaba que la semana cayera dentro de `[desde, hasta]`
+    y daba por completa a una semana con un hueco adentro. Con eso, la variacion
+    se calculaba sobre 6 dias contra 7 y se reportaba como comparable.
 
     Una semana a la que le falta un dia no es comparable contra una completa: la
     mediana de cada quote se calcula sobre menos observaciones y el minimo de
-    dias empieza a descartar quotes por un motivo que no es real.
+    dias empieza a descartar quotes por un motivo que no es real. Parece que
+    desaparecieron productos cuando lo unico que falto fue un lunes.
     """
+    presentes = set(dias)
+    if not presentes:
+        return []
     periodos: list[Periodo] = []
-    vistas: set[tuple[int, int]] = set()
-    d = desde
-    while d <= hasta:
-        anio, semana, _ = d.isocalendar()
-        if (anio, semana) not in vistas:
-            vistas.add((anio, semana))
-            p = Periodo.semana_iso(anio, semana)
-            if desde <= p.inicio and p.fin <= hasta:
-                periodos.append(p)
-        d += timedelta(days=1)
+    for anio, semana in sorted({(d.isocalendar()[0], d.isocalendar()[1])
+                                for d in presentes}):
+        p = Periodo.semana_iso(anio, semana)
+        if all(d in presentes for d in p.dias_esperados):
+            periodos.append(p)
     return periodos
 
 
-def meses_completos(desde: date, hasta: date) -> list[Periodo]:
-    """Meses que entran enteros en el rango."""
+def meses_completos(dias) -> list[Periodo]:
+    """Meses que tienen **todos sus dias presentes** en `dias`."""
+    presentes = set(dias)
+    if not presentes:
+        return []
     periodos: list[Periodo] = []
-    for anio, mes in sorted({(d.year, d.month) for d in _rango(desde, hasta)}):
+    for anio, mes in sorted({(d.year, d.month) for d in presentes}):
         p = Periodo.mes(anio, mes)
-        if desde <= p.inicio and p.fin <= hasta:
+        if all(d in presentes for d in p.dias_esperados):
             periodos.append(p)
     return periodos
 

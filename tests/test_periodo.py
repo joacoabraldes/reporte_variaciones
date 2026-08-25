@@ -81,15 +81,39 @@ def test_el_mes_va_del_uno_al_ultimo():
 
 def test_solo_entran_las_semanas_completas():
     """La captura arranco el 27/07/2026, que fue lunes: W31, W32 y W33 enteras."""
-    ps = semanas_iso_completas(date(2026, 7, 27), date(2026, 8, 17))
+    ps = semanas_iso_completas(dias(date(2026, 7, 27), 22))
     assert [p.etiqueta for p in ps] == ["2026-W31", "2026-W32", "2026-W33"]
     # El 17 es lunes de la W34: la semana esta incompleta y no entra.
     assert all(p.fin <= date(2026, 8, 17) for p in ps)
 
 
+def test_una_semana_con_un_hueco_adentro_NO_esta_completa():
+    """EL bug: alcanza con que la semana caiga en el rango para darla por buena.
+
+    Se detecto sobre datos reales: faltaba el domingo de la W34 y el reporte la
+    comparaba igual contra la W33, que si tenia los 7 dias. La variacion salia
+    de 6 dias contra 7 y se presentaba como comparable.
+    """
+    todos = dias(date(2026, 7, 27), 28)                     # W31 a W34 enteras
+    con_hueco = [d for d in todos if d != date(2026, 8, 23)]  # falta el domingo
+
+    assert [p.etiqueta for p in semanas_iso_completas(todos)][-1] == "2026-W34"
+    assert "2026-W34" not in [p.etiqueta for p in semanas_iso_completas(con_hueco)]
+    # Las tres anteriores siguen estando: el hueco solo saca a la suya.
+    assert [p.etiqueta for p in semanas_iso_completas(con_hueco)] == [
+        "2026-W31", "2026-W32", "2026-W33"
+    ]
+
+
 def test_un_mes_incompleto_no_entra():
     """Julio y agosto de 2026 estan incompletos: no hay ningun mes cerrado."""
-    assert meses_completos(date(2026, 7, 27), date(2026, 8, 17)) == []
+    assert meses_completos(dias(date(2026, 7, 27), 22)) == []
+
+
+def test_un_mes_entero_si_entra():
+    assert [p.etiqueta for p in meses_completos(dias(date(2026, 9, 1), 30))] == [
+        "2026-09"
+    ]
 
 
 def test_un_periodo_invertido_no_se_puede_construir():

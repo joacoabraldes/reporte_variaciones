@@ -37,6 +37,8 @@ sys.path.insert(0, str(RAIZ / "src"))
 
 from reporte.agregacion import agregar, laspeyres  # noqa: E402
 from reporte.elemental import (  # noqa: E402
+    detectar_outliers,
+    emparejar,
     MOTIVO_OUTLIER_MAD,
     MOTIVO_OUTLIER_TOPE,
     MOTIVO_POCOS_DIAS,
@@ -279,7 +281,7 @@ def _correr(args) -> int:
 
     # -- 2. periodos que se pueden formar ----------------------------------- #
 
-    periodos = semanas_iso_completas(min(inv.dias_presentes), max(inv.dias_presentes))
+    periodos = semanas_iso_completas(inv.dias_presentes)
     parametros = ParametrosVentana.desde_yaml(SEMANAL)
 
     titulo("2. PERIODOS")
@@ -322,6 +324,11 @@ def _correr(args) -> int:
             "estas categorias no tienen articulo en config/mapeo_categorias_engho.yaml: "
             + ", ".join(sorted(sin_articulo))
         )
+
+    # articulo -> categorias que caen en el, para poder nombrar las filas.
+    cat_de_articulo: dict[str, list[str]] = defaultdict(list)
+    for categoria, art in sorted(art_de_cat.items()):
+        cat_de_articulo[art].append(categoria)
 
     # Cuantos productos distintos tiene cada articulo: uno de los criterios de
     # ponderacion que se contrastan mas abajo.
@@ -439,6 +446,7 @@ def _correr(args) -> int:
         ga_act = agrupar(q_act.precios, articulo_de)
 
         indices_art: dict[str, float] = {}
+        indices_carli: dict[str, float] = {}
         n_quotes_art: dict[str, int] = {}
         for art in sorted(set(ga_base) | set(ga_act)):
             res = indice_elemental(
@@ -447,6 +455,16 @@ def _correr(args) -> int:
                 tope_ratio=parametros.tope_ratio,
                 minimo_quotes=parametros.minimo_quotes_mad,
             )
+            # El mismo conjunto de ratios, promediado a mano en vez de en
+            # logaritmos. NO se usa para calcular: es la comparacion que muestra
+            # el drift de Carli sobre datos reales.
+            limpios, _, _ = detectar_outliers(
+                emparejar(ga_base.get(art, {}), ga_act.get(art, {}))[0],
+                parametros.umbral_mad, parametros.tope_ratio,
+                parametros.minimo_quotes_mad,
+            )
+            if limpios:
+                indices_carli[art] = sum(r.ratio for r in limpios) / len(limpios)
             if res.indice is not None:
                 indices_art[art] = res.indice
                 n_quotes_art[art] = res.n_quotes
@@ -465,6 +483,24 @@ def _correr(args) -> int:
                 indices_art, clase_de_articulo, pesos_art
             )
         indices_clase = por_criterio["engho"]
+
+        # -- Jevons vs promedio simple, por articulo --------------------- #
+        print()
+        print("FORMULA ELEMENTAL: Jevons (la que se usa) vs promedio simple")
+        print(f"{'articulo':<10} {'quotes':>9} {'Jevons %':>10} {'simple %':>10} "
+              f"{'dif':>8}   producto")
+        print("-" * ANCHO)
+        difs = []
+        for art in sorted(indices_art, key=lambda a: -n_quotes_art[a]):
+            j = (indices_art[art] - 1) * 100
+            c = (indices_carli.get(art, indices_art[art]) - 1) * 100
+            difs.append(c - j)
+            nom = ", ".join(cat_de_articulo.get(art, [art]))
+            print(f"{art:<10} {n_quotes_art[art]:>9,} {j:>+10.3f} {c:>+10.3f} "
+                  f"{c-j:>+8.3f}   {nom[:32]}")
+        print("-" * ANCHO)
+        print(f"{'':<10} {'':>9} {'':>10} {'sesgo medio':>10} "
+              f"{sum(difs)/len(difs):>+8.3f}   el promedio simple SIEMPRE da >= Jevons")
 
         print()
         print(f"{'clase COICOP':<36} {'peso':>7} {'ENGHo':>9} {'iguales':>9} "
@@ -486,6 +522,13 @@ def _correr(args) -> int:
             c: agregar("PILOTO", "Cobertura del piloto", por_criterio[c], pesos_universo)
             for c in CRITERIOS
         }
+        # El mismo camino de agregacion pero con los elementales de Carli.
+        clases_carli = agregar_categorias_a_clases(
+            indices_carli, clase_de_articulo,
+            pesos_de_criterio("engho", indices_carli, n_prod_art, n_quotes_art,
+                              pesos_engho),
+        )
+        agregado_carli = agregar("PILOTO", "P", clases_carli, pesos_universo)
         agregado = agregados["engho"]
 
         print()
@@ -499,6 +542,13 @@ def _correr(args) -> int:
             valores = [a.variacion_pct for a in agregados.values()]
             print(f"  {'':>8}    sensibilidad al criterio: "
                   f"{max(valores)-min(valores):.4f} puntos")
+            if agregado_carli.indice is not None:
+                print()
+                print(f"  {agregado_carli.variacion_pct:>+8.4f}%   el mismo calculo "
+                      f"con promedio simple en vez de Jevons")
+                print(f"  {'':>8}    drift de Carli: "
+                      f"{agregado_carli.variacion_pct - agregado.variacion_pct:+.4f} "
+                      f"puntos de aumento que no existe")
             print()
             cubierto = sum(
                 pond[c][1] for c in indices_clase if c in pond
