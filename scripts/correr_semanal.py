@@ -48,6 +48,7 @@ from reporte.elemental import (  # noqa: E402
 )
 from reporte.lectura import LectorBucket  # noqa: E402
 from reporte.ponderadores import (  # noqa: E402
+    REGION_NACIONAL,
     articulo_de_categoria,
     clase_coicop,
     calcular as calcular_pesos_engho,
@@ -77,13 +78,45 @@ ANCHO = 82
 # --------------------------------------------------------------------------- #
 
 
+def pesos_regionales() -> dict[str, float]:
+    """`region -> su peso sobre el total nacional`, del INDEC."""
+    datos = yaml.safe_load((RAIZ / "config" / "regiones.yaml").read_text("utf-8"))
+    pesos = datos.get("pesos_regionales") or {}
+    if not pesos:
+        raise ValueError("config/regiones.yaml no define pesos_regionales")
+    return {k: float(v) for k, v in pesos.items()}
+
+
 def cargar_ponderadores(region: str) -> dict[str, tuple[str, float]]:
-    """`clase COICOP -> (nombre, peso)` para una region."""
+    """`clase COICOP -> (nombre, peso)`.
+
+    Con `region="nacional"` combina las seis regiones:
+
+        peso_nacional(clase) = suma( peso_region x ponderador_region(clase) )
+
+    Hace falta porque la muestra de precios es de todo el pais mezclado. Usar los
+    ponderadores de GBA sobre esa muestra seria asumir que solo medimos GBA, y
+    los rubros pesan distinto en cada region: alimentos son 23,4% del gasto en
+    GBA y 35,3% en el Noreste.
+
+    Control: sumar las doce divisiones nacionales tiene que dar exactamente 1.
+    """
     datos = yaml.safe_load((RAIZ / "config" / "ponderadores.yaml").read_text("utf-8"))
-    pond = {}
-    for codigo, spec in (datos.get("ponderaciones") or {}).items():
-        if region in spec:
-            pond[str(codigo)] = (spec.get("nombre", codigo), float(spec[region]))
+    ponderaciones = datos.get("ponderaciones") or {}
+
+    if region != REGION_NACIONAL:
+        return {
+            str(c): (spec.get("nombre", c), float(spec[region]))
+            for c, spec in ponderaciones.items() if region in spec
+        }
+
+    regs = pesos_regionales()
+    pond: dict[str, tuple[str, float]] = {}
+    for codigo, spec in ponderaciones.items():
+        if not all(r in spec for r in regs):
+            continue
+        peso = sum(w * float(spec[r]) for r, w in regs.items())
+        pond[str(codigo)] = (spec.get("nombre", codigo), peso)
     return pond
 
 
@@ -224,8 +257,9 @@ def main(argv=None) -> int:
     p.add_argument("--hasta", default=date.today().isoformat())
     p.add_argument("--precio", default="precio_lista",
                    choices=["precio_lista", "precio_efectivo"])
-    p.add_argument("--region", default="GBA",
-                   help="region de los ponderadores del INDEC (default: GBA)")
+    p.add_argument("--region", default=REGION_NACIONAL,
+                   help="region de los ponderadores; 'nacional' combina las seis "
+                        "(default: nacional)")
     p.add_argument("--salida", nargs="?", const="AUTO", metavar="RUTA",
                    help="ademas de imprimir, guarda el reporte en un txt "
                         "(sin valor: salida/diagnostico_<hoy>.txt)")

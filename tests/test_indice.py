@@ -280,3 +280,63 @@ def test_de_quotes_a_indice_agregado():
     # El resultado cae entre las dos variaciones, mas cerca de la de mayor peso.
     assert 1.02 < r.indice < 1.10
     assert r.indice > 1.06
+
+
+# --------------------------------------------------------------------------- #
+# Ponderadores nacionales a partir de los regionales
+# --------------------------------------------------------------------------- #
+
+
+def test_los_pesos_regionales_suman_uno():
+    """Si no suman 1, el ponderador nacional queda mal escalado en silencio."""
+    import sys
+    from pathlib import Path
+
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+    from correr_semanal import pesos_regionales
+
+    assert sum(pesos_regionales().values()) == pytest.approx(1.0, abs=1e-9)
+
+
+def test_las_divisiones_nacionales_suman_uno():
+    """EL control del metodo: combinar las seis regiones tiene que dar 1.
+
+        peso_nacional(clase) = suma( peso_region x ponderador_region(clase) )
+
+    Los ponderadores de cada region suman 1 por separado; si la combinacion
+    tambien da 1, la aritmetica esta bien.
+
+    La tolerancia es 1e-4 y no 1e-9 porque el INDEC publica a cuatro decimales:
+    su propia columna de Noreste suma 0,9999. El residuo que queda (4,5e-6) es
+    ese redondeo de la fuente, no un error nuestro.
+    """
+    import sys
+    from pathlib import Path
+
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+    from correr_semanal import cargar_ponderadores
+
+    pond = cargar_ponderadores("nacional")
+    divisiones = [c for c in pond if "." not in c and c != "0"]
+    assert len(divisiones) == 12
+    assert sum(pond[c][1] for c in divisiones) == pytest.approx(1.0, abs=1e-4)
+
+
+def test_el_ponderador_nacional_queda_entre_el_minimo_y_el_maximo_regional():
+    """Es un promedio ponderado: no puede caerse fuera del rango de sus partes."""
+    import sys
+    from pathlib import Path
+
+    import yaml
+
+    raiz = Path(__file__).resolve().parents[1]
+    sys.path.insert(0, str(raiz / "scripts"))
+    from correr_semanal import cargar_ponderadores
+
+    crudo = yaml.safe_load((raiz / "config" / "ponderadores.yaml").read_text("utf-8"))
+    regs = ["GBA", "Pampeana", "Noreste", "Noroeste", "Cuyo", "Patagonia"]
+    nac = cargar_ponderadores("nacional")
+
+    for clase in ("01.1.1", "01.1.4", "01.1.5", "01.1.8", "01.1.9", "01.2.1"):
+        valores = [crudo["ponderaciones"][clase][r] for r in regs]
+        assert min(valores) <= nac[clase][1] <= max(valores), clase

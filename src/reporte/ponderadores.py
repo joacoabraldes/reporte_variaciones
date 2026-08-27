@@ -68,6 +68,22 @@ REGIONES = {
 }
 REGION_POR_NOMBRE = {v: k for k, v in REGIONES.items()}
 
+# Pedir "nacional" suma el gasto de las seis regiones en vez de filtrar por una.
+#
+# NO se combinan las seis con los pesos regionales del INDEC, y el motivo es que
+# esos pesos salen de la ENGHo 2004/05: usarlos sobre gasto de la 2017/18 seria
+# mezclar dos encuestas. Los factores de expansion de la ENGHo ya son
+# poblacionales, asi que sumar da la participacion nacional directamente.
+#
+# Medido: la participacion regional implicita de la ENGHo 2017/18 es GBA 0,4381
+# y Pampeana 0,3226, contra 0,4467 y 0,3419 del INDEC. Son trece anios de
+# diferencia entre encuestas, no un error.
+#
+# El nivel CLASE es otra historia: ahi los ponderadores SI son del INDEC (base
+# 2004/05) y hay que combinarlos con los pesos regionales del INDEC, que son de
+# la misma cosecha. Eso vive en el script, no aca.
+REGION_NACIONAL = "nacional"
+
 
 @dataclasses.dataclass(frozen=True)
 class PesoArticulo:
@@ -197,25 +213,31 @@ def pesos_por_articulo(
     El denominador es la clase y no el total: lo que hace falta es repartir el
     peso que el INDEC ya publica a nivel clase entre las categorias de adentro.
     """
-    cod = REGION_POR_NOMBRE.get(region)
-    if cod is None:
-        raise ValueError(
-            f"region desconocida: {region!r} (hay: {', '.join(REGIONES.values())})"
-        )
+    if region == REGION_NACIONAL:
+        filtro, params = "TRUE", []
+    else:
+        cod = REGION_POR_NOMBRE.get(region)
+        if cod is None:
+            raise ValueError(
+                f"region desconocida: {region!r} "
+                f"(hay: {', '.join(REGIONES.values())}, {REGION_NACIONAL})"
+            )
+        filtro, params = "region = ?", [cod, cod]
+
     filas = con.execute(
-        """
+        f"""
         WITH tot AS (
             SELECT clase, sum(pondera * monto) AS s
-            FROM gastos WHERE region = ? GROUP BY clase
+            FROM gastos WHERE {filtro} GROUP BY clase
         )
         SELECT g.articulo,
                sum(g.pondera * g.monto) / any_value(tot.s),
                sum(g.pondera * g.monto)
         FROM gastos g JOIN tot ON tot.clase = g.clase
-        WHERE g.region = ?
+        WHERE g.{filtro}
         GROUP BY g.articulo
-        """,
-        [cod, cod],
+        """.replace("g.TRUE", "TRUE"),
+        params,
     ).fetchall()
     return {a: (float(p), float(gasto)) for a, p, gasto in filas}
 
@@ -284,13 +306,16 @@ def cobertura_por_clase(
     con = con or conectar()
     try:
         region = pesos[0].region if pesos else "GBA"
-        n_por_clase = dict(
-            con.execute(
+        if region == REGION_NACIONAL:
+            n_por_clase = dict(con.execute(
+                "SELECT clase, count(DISTINCT articulo) FROM gastos GROUP BY clase"
+            ).fetchall())
+        else:
+            n_por_clase = dict(con.execute(
                 "SELECT clase, count(DISTINCT articulo) FROM gastos "
                 "WHERE region = ? GROUP BY clase",
                 [REGION_POR_NOMBRE[region]],
-            ).fetchall()
-        )
+            ).fetchall())
         acum: dict[str, CoberturaClase] = {}
         for p in pesos:
             c = acum.get(p.clase)

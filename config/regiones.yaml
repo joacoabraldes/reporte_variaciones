@@ -75,11 +75,26 @@ partidos_gba:
   - Vicente López
 
 # Peso de cada region sobre el total nacional.
-# Fuente: docs/ponderaciones_regionales.jpeg (Cuadro 6 del documento metodologico).
+#
+# Fuente: fila "Importancia relativa de la region en el total nacional" de la
+# hoja Ponderaciones de sh_ipc_aperturas.xls (INDEC). Antes estaban a 3 decimales
+# y sumaban 1,001; estos suman 1,0000 exacto.
+#
+# Sirven para pasar de ponderadores por region a NACIONALES:
+#
+#     peso_nacional(clase) = suma( peso_region x ponderador_region(clase) )
+#
+# Hace falta porque la muestra de precios es de todo el pais mezclado: aplicarle
+# los ponderadores de GBA seria asumir que solo medimos GBA.
+#
+# OJO: estos pesos salen de la ENGHo 2004/05, igual que los ponderadores del
+# INDEC. NO se usan para los pesos de la ENGHo 2017/18 — ahi se suma el gasto de
+# las seis regiones directo, porque mezclar las dos encuestas seria incoherente.
+# Ver el comentario de REGION_NACIONAL en src/reporte/ponderadores.py.
 pesos_regionales:
-  GBA:        0.447
-  Pampeana:   0.342
-  Noroeste:   0.069
-  Cuyo:       0.052
-  Patagonia:  0.046
-  Noreste:    0.045
+  GBA:        0.4467
+  Pampeana:   0.3419
+  Noroeste:   0.0688
+  Cuyo:       0.0518
+  Patagonia:  0.0457
+  Noreste:    0.0451

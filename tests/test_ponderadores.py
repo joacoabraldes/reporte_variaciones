@@ -251,3 +251,56 @@ def test_los_pesos_reales_cierran_y_son_plausibles():
         assert cob["01.1.5"].cubierto > cob["01.1.9"].cubierto
     finally:
         con.close()
+
+
+# --------------------------------------------------------------------------- #
+# Nacional: como se pasa de seis regiones a una sola cifra
+# --------------------------------------------------------------------------- #
+
+
+def test_nacional_suma_las_seis_regiones_en_vez_de_filtrar_una():
+    """El gasto de la ENGHo ya viene expandido a poblacion: se suma, no se pondera.
+
+    Ponderar con los pesos regionales del INDEC seria mezclar encuestas: esos
+    pesos salen de la ENGHo 2004/05 y estos gastos de la 2017/18.
+    """
+    from reporte.ponderadores import REGION_NACIONAL
+
+    con = _con_sintetica([
+        (1, "A0111", "A0111304", 1.0, 300.0),   # GBA
+        (2, "A0111", "A0111201", 1.0, 100.0),   # Pampeana
+    ])
+    # Cada region ve un solo articulo, asi que dentro de su clase pesa 100%.
+    assert pesos_por_articulo(con, "GBA")["A0111304"][0] == pytest.approx(1.0)
+    assert pesos_por_articulo(con, "Pampeana")["A0111201"][0] == pytest.approx(1.0)
+
+    # Nacional los junta: 300 y 100 sobre 400.
+    nac = pesos_por_articulo(con, REGION_NACIONAL)
+    assert nac["A0111304"][0] == pytest.approx(0.75)
+    assert nac["A0111201"][0] == pytest.approx(0.25)
+    assert sum(v[0] for v in nac.values()) == pytest.approx(1.0)
+
+
+def test_calcular_nacional_devuelve_los_mismos_articulos():
+    from reporte.ponderadores import REGION_NACIONAL
+
+    con = _con_sintetica([
+        (1, "A0111", "A0111304", 1.0, 300.0),
+        (2, "A0111", "A0111304", 1.0, 100.0),
+    ])
+    pesos = calcular(REGION_NACIONAL, con=con, mapeo={"f": {"articulo": "A0111304"}})
+    assert pesos[0].region == REGION_NACIONAL
+    assert pesos[0].gasto == pytest.approx(400.0), "las dos regiones sumadas"
+
+
+def test_la_cobertura_nacional_no_filtra_por_region():
+    from reporte.ponderadores import REGION_NACIONAL
+
+    con = _con_sintetica([
+        (1, "A0111", "A0111304", 1.0, 300.0),
+        (2, "A0111", "A0111201", 1.0, 100.0),
+    ])
+    pesos = calcular(REGION_NACIONAL, con=con, mapeo={"f": {"articulo": "A0111304"}})
+    cob = cobertura_por_clase(pesos, con=con)
+    assert cob["01.1.1"].n_articulos_clase == 2, "los dos, no solo el de una region"
+    assert cob["01.1.1"].cubierto == pytest.approx(0.75)
