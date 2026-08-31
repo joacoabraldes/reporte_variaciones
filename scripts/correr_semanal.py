@@ -49,12 +49,15 @@ from reporte.elemental import (  # noqa: E402
 from reporte.lectura import LectorBucket  # noqa: E402
 from reporte.ponderadores import (  # noqa: E402
     REGION_NACIONAL,
+    actualizar_por_precios,
     articulo_de_categoria,
     clase_coicop,
     calcular as calcular_pesos_engho,
     cobertura_por_clase,
     conectar as conectar_engho,
+    factores_actualizacion,
     pesos_de_articulos,
+    ponderadores_de_clase,
 )
 from reporte.periodo import (  # noqa: E402
     SEMANAL,
@@ -78,46 +81,18 @@ ANCHO = 82
 # --------------------------------------------------------------------------- #
 
 
-def pesos_regionales() -> dict[str, float]:
-    """`region -> su peso sobre el total nacional`, del INDEC."""
-    datos = yaml.safe_load((RAIZ / "config" / "regiones.yaml").read_text("utf-8"))
-    pesos = datos.get("pesos_regionales") or {}
-    if not pesos:
-        raise ValueError("config/regiones.yaml no define pesos_regionales")
-    return {k: float(v) for k, v in pesos.items()}
+def cargar_ponderadores(region: str, actualizar: bool) -> dict[str, tuple[str, float]]:
+    """Ponderadores de clase del INDEC, opcionalmente actualizados por precios.
 
-
-def cargar_ponderadores(region: str) -> dict[str, tuple[str, float]]:
-    """`clase COICOP -> (nombre, peso)`.
-
-    Con `region="nacional"` combina las seis regiones:
-
-        peso_nacional(clase) = suma( peso_region x ponderador_region(clase) )
-
-    Hace falta porque la muestra de precios es de todo el pais mezclado. Usar los
-    ponderadores de GBA sobre esa muestra seria asumir que solo medimos GBA, y
-    los rubros pesan distinto en cada region: alimentos son 23,4% del gasto en
-    GBA y 35,3% en el Noreste.
-
-    Control: sumar las doce divisiones nacionales tiene que dar exactamente 1.
+    Los del archivo estan en base diciembre 2016. Laspeyres pide que el periodo
+    de referencia de los ponderadores coincida con el de la base de precios, y el
+    documento metodologico del INDEC recomienda "realizar (al menos) un ajuste
+    por la evolucion de los precios". Eso es lo que hace `actualizar`.
     """
-    datos = yaml.safe_load((RAIZ / "config" / "ponderadores.yaml").read_text("utf-8"))
-    ponderaciones = datos.get("ponderaciones") or {}
-
-    if region != REGION_NACIONAL:
-        return {
-            str(c): (spec.get("nombre", c), float(spec[region]))
-            for c, spec in ponderaciones.items() if region in spec
-        }
-
-    regs = pesos_regionales()
-    pond: dict[str, tuple[str, float]] = {}
-    for codigo, spec in ponderaciones.items():
-        if not all(r in spec for r in regs):
-            continue
-        peso = sum(w * float(spec[r]) for r, w in regs.items())
-        pond[str(codigo)] = (spec.get("nombre", codigo), peso)
-    return pond
+    pond = ponderadores_de_clase(region)
+    if not actualizar:
+        return pond
+    return actualizar_por_precios(pond, factores_actualizacion(region))
 
 
 # --------------------------------------------------------------------------- #
@@ -263,6 +238,9 @@ def main(argv=None) -> int:
     p.add_argument("--salida", nargs="?", const="AUTO", metavar="RUTA",
                    help="ademas de imprimir, guarda el reporte en un txt "
                         "(sin valor: salida/diagnostico_<hoy>.txt)")
+    p.add_argument("--sin-actualizar", action="store_true",
+                   help="no actualiza los ponderadores por la evolucion de "
+                        "precios (para comparar contra la version anterior)")
     p.add_argument("-v", "--verboso", action="store_true")
     args = p.parse_args(argv)
 
@@ -322,6 +300,9 @@ def _correr(args) -> int:
     print(f"semanas ISO completas: {len(periodos)}")
     for per in periodos:
         print(f"  {per.etiqueta}  {per.inicio} .. {per.fin}")
+    print()
+    print(f"ponderadores        {args.region}"
+          + ("" if args.sin_actualizar else ", actualizados por precios"))
     print()
     print(f"parametros de la ventana '{parametros.tipo}':")
     print(f"  minimo de dias por quote   {parametros.minimo_dias_quote}")
@@ -389,12 +370,13 @@ def _correr(args) -> int:
     print("Que fraccion del gasto de cada clase mide el indice. Hoy se aplica el")
     print("100% del peso de cada clase midiendo solo una parte de sus articulos.")
     print()
-    print(f"{'clase':<8} {'cubierto':>10} {'categorias':>12} {'articulos':>11}")
+    print(f"{'clase':<8} {'cubierto':>10} {'art. medidos':>13} "
+          f"{'art. clase':>11} {'categorias':>11}")
     print("-" * ANCHO)
     for clase in sorted(cobertura):
         c = cobertura[clase]
-        print(f"{clase:<8} {c.pct:>9.1f}% {c.n_categorias:>12} "
-              f"{c.n_articulos_clase:>11}")
+        print(f"{clase:<8} {c.pct:>9.1f}% {c.n_articulos:>13} "
+              f"{c.n_articulos_clase:>11} {c.n_categorias:>11}")
     print()
     print(f"{'articulo':<10} {'peso en su clase':>17}   categorias que lo miden")
     print("-" * ANCHO)
@@ -414,7 +396,7 @@ def _correr(args) -> int:
 
     # -- 5. variacion periodo contra periodo -------------------------------- #
 
-    pond = cargar_ponderadores(args.region)
+    pond = cargar_ponderadores(args.region, not args.sin_actualizar)
     variaciones: list[VariacionPeriodo] = []
 
     for base_per, act_per in zip(periodos, periodos[1:]):

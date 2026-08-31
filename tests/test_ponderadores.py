@@ -186,6 +186,7 @@ def test_la_cobertura_mide_que_parte_de_la_clase_se_observa():
     cob = cobertura_por_clase(pesos, con=con)
     assert cob["01.1.1"].cubierto == pytest.approx(0.75)
     assert cob["01.1.1"].n_articulos_clase == 2
+    assert cob["01.1.1"].n_articulos == 1, "medimos uno de los dos"
     assert cob["01.1.1"].n_categorias == 1
 
 
@@ -200,6 +201,7 @@ def test_un_articulo_compartido_no_cuenta_doble_en_la_cobertura():
     })
     cob = cobertura_por_clase(pesos, con=con)
     assert cob["01.1.1"].cubierto == pytest.approx(0.25), "no 0.50"
+    assert cob["01.1.1"].n_articulos == 1, "UN articulo, aunque sean dos categorias"
     assert cob["01.1.1"].n_categorias == 2, "las dos categorias siguen contandose"
 
 

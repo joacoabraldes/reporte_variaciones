@@ -289,11 +289,7 @@ def test_de_quotes_a_indice_agregado():
 
 def test_los_pesos_regionales_suman_uno():
     """Si no suman 1, el ponderador nacional queda mal escalado en silencio."""
-    import sys
-    from pathlib import Path
-
-    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
-    from correr_semanal import pesos_regionales
+    from reporte.ponderadores import pesos_regionales
 
     assert sum(pesos_regionales().values()) == pytest.approx(1.0, abs=1e-9)
 
@@ -301,22 +297,12 @@ def test_los_pesos_regionales_suman_uno():
 def test_las_divisiones_nacionales_suman_uno():
     """EL control del metodo: combinar las seis regiones tiene que dar 1.
 
-        peso_nacional(clase) = suma( peso_region x ponderador_region(clase) )
-
-    Los ponderadores de cada region suman 1 por separado; si la combinacion
-    tambien da 1, la aritmetica esta bien.
-
     La tolerancia es 1e-4 y no 1e-9 porque el INDEC publica a cuatro decimales:
-    su propia columna de Noreste suma 0,9999. El residuo que queda (4,5e-6) es
-    ese redondeo de la fuente, no un error nuestro.
+    su propia columna de Noreste suma 0,9999.
     """
-    import sys
-    from pathlib import Path
+    from reporte.ponderadores import ponderadores_de_clase
 
-    sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
-    from correr_semanal import cargar_ponderadores
-
-    pond = cargar_ponderadores("nacional")
+    pond = ponderadores_de_clase("nacional")
     divisiones = [c for c in pond if "." not in c and c != "0"]
     assert len(divisiones) == 12
     assert sum(pond[c][1] for c in divisiones) == pytest.approx(1.0, abs=1e-4)
@@ -324,19 +310,93 @@ def test_las_divisiones_nacionales_suman_uno():
 
 def test_el_ponderador_nacional_queda_entre_el_minimo_y_el_maximo_regional():
     """Es un promedio ponderado: no puede caerse fuera del rango de sus partes."""
-    import sys
     from pathlib import Path
 
     import yaml
 
-    raiz = Path(__file__).resolve().parents[1]
-    sys.path.insert(0, str(raiz / "scripts"))
-    from correr_semanal import cargar_ponderadores
+    from reporte.ponderadores import ponderadores_de_clase
 
+    raiz = Path(__file__).resolve().parents[1]
     crudo = yaml.safe_load((raiz / "config" / "ponderadores.yaml").read_text("utf-8"))
     regs = ["GBA", "Pampeana", "Noreste", "Noroeste", "Cuyo", "Patagonia"]
-    nac = cargar_ponderadores("nacional")
+    nac = ponderadores_de_clase("nacional")
 
     for clase in ("01.1.1", "01.1.4", "01.1.5", "01.1.8", "01.1.9", "01.2.1"):
         valores = [crudo["ponderaciones"][clase][r] for r in regs]
         assert min(valores) <= nac[clase][1] <= max(valores), clase
+
+
+# --------------------------------------------------------------------------- #
+# Actualizacion por precios
+# --------------------------------------------------------------------------- #
+
+
+def test_actualizar_reescala_por_el_precio_relativo():
+    """Lo que subio mas que el promedio gana peso; lo que subio menos, pierde."""
+    from reporte.ponderadores import actualizar_por_precios
+
+    pond = {"A": ("a", 0.50), "B": ("b", 0.50)}
+    act = actualizar_por_precios(pond, {"A": 2.0, "B": 1.0})
+
+    assert act["A"][1] == pytest.approx(2 / 3)
+    assert act["B"][1] == pytest.approx(1 / 3)
+    assert act["A"][1] + act["B"][1] == pytest.approx(1.0)
+
+
+def test_un_factor_parejo_no_cambia_nada():
+    """Si todo subio igual, las proporciones quedan intactas.
+
+    Es la razon por la que los pesos de la ENGHo NO se actualizan: el INDEC
+    publica precios por clase, asi que dentro de una clase todos los articulos
+    llevarian el mismo factor y se cancelaria en la renormalizacion.
+    """
+    from reporte.ponderadores import actualizar_por_precios
+
+    pond = {"A": ("a", 0.30), "B": ("b", 0.70)}
+    act = actualizar_por_precios(pond, {"A": 121.0, "B": 121.0})
+    assert act["A"][1] == pytest.approx(0.30)
+    assert act["B"][1] == pytest.approx(0.70)
+
+
+def test_una_clase_sin_factor_queda_afuera():
+    """Mejor excluirla que dejarla con el peso viejo entre las actualizadas."""
+    from reporte.ponderadores import actualizar_por_precios
+
+    act = actualizar_por_precios(
+        {"A": ("a", 0.50), "B": ("b", 0.50)}, {"A": 2.0}
+    )
+    assert set(act) == {"A"}
+    assert act["A"][1] == pytest.approx(1.0)
+
+
+def test_los_factores_reales_son_todos_mayores_a_uno():
+    """Verifica el mapeo contra la planilla del INDEC, no solo la aritmetica.
+
+    Si el INDEC republica con otros nombres de apertura, `factores_actualizacion`
+    tiene que romper aca y no dejar una clase sin actualizar en silencio.
+    """
+    from reporte.ponderadores import factores_actualizacion
+
+    f = factores_actualizacion("nacional")
+    assert set(f) == {"01.1.1", "01.1.4", "01.1.5", "01.1.8", "01.1.9", "01.2.1"}
+    # Base diciembre 2016 = 100 y desde entonces los precios subieron mucho.
+    assert all(v > 50 for v in f.values()), f
+
+
+def test_una_apertura_inexistente_falla_claro(tmp_path):
+    """El modo de falla que importa: un nombre que cambia en la planilla.
+
+    Sin esto, la clase se quedaria con su peso viejo mientras las demas se
+    actualizan, y el agregado seguiria pareciendo razonable.
+    """
+    import yaml
+
+    from reporte.ponderadores import factores_actualizacion
+
+    mapeo = tmp_path / 'indices.yaml'
+    mapeo.write_text(
+        yaml.safe_dump({'clases': {'01.1.1': {'apertura': 'Rubro Que No Existe'}}}),
+        encoding='utf-8',
+    )
+    with pytest.raises(ValueError, match='no esta'):
+        factores_actualizacion('nacional', path_mapeo=mapeo)

@@ -51,6 +51,10 @@ import yaml
 
 RAIZ_REPO = Path(__file__).resolve().parents[2]
 PATH_MAPEO = RAIZ_REPO / "config" / "mapeo_categorias_engho.yaml"
+PATH_PONDERADORES = RAIZ_REPO / "config" / "ponderadores.yaml"
+PATH_REGIONES = RAIZ_REPO / "config" / "regiones.yaml"
+PATH_INDICES = RAIZ_REPO / "config" / "indices_ipc.yaml"
+PATH_XLS_INDICES = RAIZ_REPO / "docs" / "ipc_aperturas.xls"
 DIR_ENGHO = RAIZ_REPO / "docs" / "engho"
 
 ZIP_GASTOS = DIR_ENGHO / "engho2018_gastos.zip"
@@ -125,8 +129,14 @@ class CoberturaClase:
     clase: str
     region: str
     cubierto: float             # suma de pesos de los articulos que medimos
-    n_categorias: int
-    n_articulos_clase: int
+    n_articulos: int            # articulos de la ENGHo que medimos
+    n_articulos_clase: int      # articulos que tiene la clase en total
+    n_categorias: int           # categorias NUESTRAS (>= n_articulos)
+
+    # `n_articulos` y `n_categorias` no son lo mismo y no hay que confundirlos al
+    # reportar: tres articulos cubren dos categorias nuestras cada uno, asi que
+    # 23 categorias caen en 20 articulos. Comparar categorias contra
+    # `n_articulos_clase` seria comparar unidades distintas.
 
     @property
     def pct(self) -> float:
@@ -322,11 +332,13 @@ def cobertura_por_clase(
             if c is None:
                 clase_engho = "A" + p.clase.replace(".", "")
                 c = CoberturaClase(
-                    clase=p.clase, region=region, cubierto=0.0, n_categorias=0,
+                    clase=p.clase, region=region, cubierto=0.0,
+                    n_articulos=0, n_categorias=0,
                     n_articulos_clase=int(n_por_clase.get(clase_engho, 0)),
                 )
                 acum[p.clase] = c
             c.cubierto += p.peso_en_clase
+            c.n_articulos += 1
             c.n_categorias += len(p.categorias)
         return acum
     finally:
@@ -337,3 +349,155 @@ def cobertura_por_clase(
 def pesos_de_articulos(pesos: list[PesoArticulo]) -> dict[str, float]:
     """`articulo -> peso en su clase`, listo para la agregacion."""
     return {p.articulo: p.peso_en_clase for p in pesos}
+
+
+# --------------------------------------------------------------------------- #
+# Ponderadores de CLASE: los del INDEC
+# --------------------------------------------------------------------------- #
+#
+# Distintos de los de arriba. Los de la ENGHo reparten DENTRO de una clase; estos
+# son los que el INDEC publica POR clase, y son los que pesan una clase contra
+# otra. Vienen por region y en base diciembre 2016.
+
+
+def pesos_regionales(path: Path | None = None) -> dict[str, float]:
+    """`region -> su peso sobre el total nacional`, del INDEC."""
+    datos = yaml.safe_load((path or PATH_REGIONES).read_text(encoding="utf-8"))
+    pesos = datos.get("pesos_regionales") or {}
+    if not pesos:
+        raise ValueError(f"{path or PATH_REGIONES} no define pesos_regionales")
+    return {k: float(v) for k, v in pesos.items()}
+
+
+def ponderadores_de_clase(
+    region: str = REGION_NACIONAL, path: Path | None = None
+) -> dict[str, tuple[str, float]]:
+    """`clase COICOP -> (nombre, peso)`.
+
+    Con `region="nacional"` combina las seis:
+
+        peso_nacional(clase) = suma( peso_region x ponderador_region(clase) )
+
+    Hace falta porque la muestra de precios es de todo el pais mezclado. Usar los
+    de GBA seria asumir que solo medimos GBA, y los rubros pesan distinto en cada
+    region: alimentos son 23,4% del gasto en GBA y 35,3% en el Noreste.
+
+    Control: sumar las doce divisiones nacionales tiene que dar 1.
+    """
+    datos = yaml.safe_load((path or PATH_PONDERADORES).read_text(encoding="utf-8"))
+    ponderaciones = datos.get("ponderaciones") or {}
+
+    if region != REGION_NACIONAL:
+        return {
+            str(c): (spec.get("nombre", c), float(spec[region]))
+            for c, spec in ponderaciones.items() if region in spec
+        }
+
+    regs = pesos_regionales()
+    pond: dict[str, tuple[str, float]] = {}
+    for codigo, spec in ponderaciones.items():
+        if all(r in spec for r in regs):
+            pond[str(codigo)] = (
+                spec.get("nombre", codigo),
+                sum(w * float(spec[r]) for r, w in regs.items()),
+            )
+    return pond
+
+
+# --------------------------------------------------------------------------- #
+# Actualizacion por precios
+# --------------------------------------------------------------------------- #
+
+
+def _indices_publicados(region: str, xls: Path | None = None) -> dict[str, list]:
+    """`apertura -> serie mensual de indices`, para una region de la planilla."""
+    import pandas as pd
+
+    d = pd.ExcelFile(xls or PATH_XLS_INDICES).parse("Índices aperturas", header=None)
+    etiquetas = [str(v).strip() for v in d[0].tolist()]
+
+    nombre_region = f"Región {region}" if region != REGION_NACIONAL else "Región GBA"
+    try:
+        inicio = etiquetas.index(nombre_region)
+    except ValueError as exc:
+        raise ValueError(
+            f"la planilla de indices no tiene la region {nombre_region!r}"
+        ) from exc
+
+    # La serie de esa region va hasta que aparece la siguiente region.
+    fin = len(etiquetas)
+    for i in range(inicio + 1, len(etiquetas)):
+        if etiquetas[i].startswith("Región "):
+            fin = i
+            break
+
+    series: dict[str, list] = {}
+    for i in range(inicio, fin):
+        etiqueta = etiquetas[i]
+        if not etiqueta or etiqueta == "nan" or etiqueta.startswith("Región "):
+            continue
+        valores = [v for v in d.iloc[i, 1:].tolist() if isinstance(v, (int, float))]
+        if valores:
+            series[etiqueta] = valores
+    return series
+
+
+def factores_actualizacion(
+    region: str = REGION_NACIONAL,
+    mes: int | None = None,
+    path_mapeo: Path | None = None,
+    xls: Path | None = None,
+) -> dict[str, float]:
+    """`clase COICOP -> cuanto subio su precio desde diciembre 2016`.
+
+    `mes` es la posicion en la serie publicada; `None` toma la ultima disponible.
+    El factor es el indice dividido 100, porque la base es diciembre 2016 = 100.
+
+    Falla si una clase declarada en `indices_ipc.yaml` no aparece en la planilla:
+    ese es el modo de falla que importa, porque una clase sin factor se queda con
+    su peso viejo mientras las demas se actualizan, y el numero sigue pareciendo
+    razonable.
+    """
+    cfg = yaml.safe_load((path_mapeo or PATH_INDICES).read_text(encoding="utf-8"))
+    series = _indices_publicados(region, xls)
+
+    factores: dict[str, float] = {}
+    for clase, spec in (cfg.get("clases") or {}).items():
+        apertura = spec.get("apertura")
+        if apertura not in series:
+            raise ValueError(
+                f"la clase {clase} declara la apertura {apertura!r}, que no esta "
+                f"en la planilla de indices. Revisar config/indices_ipc.yaml: los "
+                f"nombres de la planilla cambian entre publicaciones."
+            )
+        serie = series[apertura]
+        factores[str(clase)] = float(serie[mes if mes is not None else -1]) / 100.0
+    return factores
+
+
+def actualizar_por_precios(
+    pond: dict[str, tuple[str, float]], factores: dict[str, float]
+) -> dict[str, tuple[str, float]]:
+    """Lleva los ponderadores de clase de su base a la base de precios.
+
+        peso'(c) = peso(c) x factor(c)  /  suma( peso(j) x factor(j) )
+
+    Solo se actualizan las clases con factor; el resto queda afuera. Como despues
+    se renormaliza sobre lo cubierto, lo que importa es la proporcion ENTRE las
+    clases que entran al indice, y eso es exactamente lo que esto corrige.
+
+    **Sobre los pesos de la ENGHo esto no se aplica, y no es un olvido.** Aquellos
+    reparten dentro de una clase, y el INDEC publica evolucion de precios por
+    clase, no por articulo: si a todos los articulos de una clase les toca el
+    mismo factor, se cancela en la renormalizacion. Actualizarlos seria un no-op.
+    """
+    comunes = {c: pond[c] for c in pond if c in factores}
+    if not comunes:
+        return {}
+    total = sum(peso * factores[c] for c, (_, peso) in comunes.items())
+    if total <= 0:
+        return {}
+    return {
+        c: (nombre, peso * factores[c] / total)
+        for c, (nombre, peso) in comunes.items()
+    }

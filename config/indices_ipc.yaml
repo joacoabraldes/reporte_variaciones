@@ -1,0 +1,83 @@
+# Clase COICOP -> la apertura con la que el INDEC publica su indice de precios.
+#
+# PARA QUE SIRVE
+# Los ponderadores del IPC estan en base diciembre 2016, y Laspeyres pide que el
+# periodo de referencia de los ponderadores coincida con el de la base de
+# precios. El documento metodologico lo dice asi:
+#
+#   "Como es extremadamente dificil estimar en forma detallada la evolucion de
+#    las cantidades consumidas, se recomienda realizar (al menos) un ajuste por
+#    la evolucion de los precios."
+#
+# Ese ajuste es:
+#
+#     peso_actualizado(c) = peso(c) x indice(c)  /  suma( peso(j) x indice(j) )
+#
+# donde `indice(c)` es el nivel de precios de la clase c en el mes destino, con
+# diciembre 2016 = 100. Sale de docs/ipc_aperturas.xls, hoja "Indices aperturas".
+#
+# POR QUE HACE FALTA ESTE ARCHIVO
+# La planilla de indices identifica cada serie por NOMBRE, no por codigo COICOP,
+# y los nombres NO coinciden con los de ponderadores.yaml. Por ejemplo, la clase
+# 01.1.4 se llama "Leche, productos lacteos, huevos y alimentos vegetales" en los
+# ponderadores y "Leche, productos lacteos y huevos" en los indices.
+#
+# Matchear por texto es justo lo que se rompe sin avisar: un nombre que cambia
+# deja una clase sin factor, y esa clase queda con su peso viejo mientras las
+# demas se actualizan. El resultado sigue siendo un numero plausible. Por eso el
+# mapeo es explicito, versionado, y `ponderadores.py` falla si una clase del
+# indice no esta declarada aca.
+#
+# EL FALLBACK
+# El INDEC publica 49 aperturas, y no todas las clases tienen la suya. De las
+# seis del piloto, cinco tienen indice propio y "Otros alimentos" (01.1.9) no.
+# Para esas se usa el indice del nivel inmediato superior que si este publicado
+# —su grupo, o su division— y queda anotado en `usa_nivel_superior`.
+#
+# Es un supuesto, pero acotado y en la direccion correcta: se asume que la clase
+# se movio como el agregado que la contiene, que es lo mas cercano que hay.
+
+version: 1
+
+fuente: docs/ipc_aperturas.xls, hoja "Indices aperturas" (INDEC)
+base: diciembre 2016 = 100
+
+# La hoja trae una serie por region, apiladas. Estos son los nombres de region
+# tal como aparecen en la columna A, en orden.
+regiones_en_la_planilla:
+  - Región GBA
+  - Región Pampeana
+  - Región Noroeste
+  - Región Noreste
+  - Región Cuyo
+  - Región Patagonia
+
+clases:
+
+  "01.1.1":
+    apertura: Pan y cereales
+
+  "01.1.4":
+    # En los ponderadores se llama "Leche, productos lacteos, huevos y alimentos
+    # vegetales"; en los indices, sin la cola.
+    apertura: Leche, productos lácteos y huevos
+
+  "01.1.5":
+    apertura: Aceites, grasas y manteca
+
+  "01.1.8":
+    # Ojo la coma final: la planilla dice "etc," y no "etc.".
+    apertura: Azúcar, dulces, chocolate, golosinas, etc,
+
+  "01.1.9":
+    # El INDEC no publica indice para "Otros alimentos". Se usa el del grupo
+    # Alimentos, que es el agregado que la contiene.
+    apertura: Alimentos
+    usa_nivel_superior: "01.1"
+
+  "01.2.1":
+    apertura: Café, té, yerba y cacao
+
+# Para renormalizar hace falta el nivel general, que es el denominador natural
+# cuando se actualiza la canasta completa.
+nivel_general: Nivel general
