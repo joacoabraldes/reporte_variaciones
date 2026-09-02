@@ -1,23 +1,27 @@
-"""Corrida de diagnostico del indice sobre ventanas semanales.
+"""Corrida de diagnostico del indice, sobre la ventana que se le pida.
 
-**El objetivo no es el numero.** Con 22 dias capturados y meses incompletos, la
-variacion semanal no es un dato publicable: es un ensayo para ver como se
-comporta el pipeline antes de que en octubre haya que entregar el mensual. Lo
-que importa es si la cuarentena se llena, si la muestra emparejada colapsa, o si
-una categoria no llega al minimo de quotes.
+**La ventana es un parametro, no un supuesto.** Por eso hay un solo script y no
+uno semanal y otro mensual: el metodo es identico —mediana por quote, muestra
+emparejada, Jevons dentro de cada articulo, Laspeyres hacia arriba,
+encadenamiento— y lo unico que cambia son dos numeros de `config/parametros.yaml`
+(el minimo de dias por quote y el ancho del tope absoluto).
 
-El metodo es el mismo que va a correr sobre meses: mediana por quote, muestra
-emparejada, Jevons dentro de cada categoria, Laspeyres hacia arriba,
-encadenamiento. Cambian dos parametros (`config/parametros.yaml`) y nada mas.
+Dos scripts separados duplicarian la logica y con el tiempo se irian separando,
+que es exactamente lo que este diseño evita: si el semanal y el mensual pudieran
+divergir, lo que se aprende ensayando en semanal no diria nada sobre el mensual.
 
-**Esto no va a la API ni a ningun dashboard.** Es un script, imprime a pantalla
-y no persiste nada.
+**Semanal** existe para poder mirar el pipeline sin esperar a que cierren dos
+meses. **Mensual** es lo que hay que entregar. El primer numero mensual real sale
+cuando cierre septiembre: julio arranca el 27 y no es un mes cerrado.
 
-    python scripts/correr_semanal.py
-    python scripts/correr_semanal.py --salida
-    python scripts/correr_semanal.py --salida salida/prueba.txt
-    python scripts/correr_semanal.py --precio precio_efectivo
-    python scripts/correr_semanal.py --desde 2026-08-03 --hasta 2026-08-16
+**Esto no va a la API ni a ningun dashboard.** Es un script, imprime a pantalla y
+no persiste nada.
+
+    python scripts/correr_indice.py
+    python scripts/correr_indice.py --ventana mensual
+    python scripts/correr_indice.py --salida
+    python scripts/correr_indice.py --precio precio_efectivo
+    python scripts/correr_indice.py --desde 2026-08-03 --hasta 2026-08-16
 """
 
 from __future__ import annotations
@@ -60,11 +64,13 @@ from reporte.ponderadores import (  # noqa: E402
     ponderadores_de_clase,
 )
 from reporte.periodo import (  # noqa: E402
+    MENSUAL,
     SEMANAL,
     ClaveQuote,
     ParametrosVentana,
     Periodo,
     VariacionPeriodo,
+    meses_completos,
     quotes_del_periodo,
     semanas_iso_completas,
     serie_encadenada,
@@ -238,6 +244,8 @@ def main(argv=None) -> int:
     p.add_argument("--salida", nargs="?", const="AUTO", metavar="RUTA",
                    help="ademas de imprimir, guarda el reporte en un txt "
                         "(sin valor: salida/diagnostico_<hoy>.txt)")
+    p.add_argument("--ventana", default=SEMANAL, choices=[SEMANAL, MENSUAL],
+                   help="ventana temporal del calculo (default: semanal)")
     p.add_argument("--sin-actualizar", action="store_true",
                    help="no actualiza los ponderadores por la evolucion de "
                         "precios (para comparar contra la version anterior)")
@@ -293,11 +301,19 @@ def _correr(args) -> int:
 
     # -- 2. periodos que se pueden formar ----------------------------------- #
 
-    periodos = semanas_iso_completas(inv.dias_presentes)
-    parametros = ParametrosVentana.desde_yaml(SEMANAL)
+    # La ventana es un parametro, no un supuesto: el metodo es identico y solo
+    # cambian los dos numeros de config/parametros.yaml. Semanal existe para
+    # poder mirar el pipeline sin esperar a que cierren dos meses; mensual es lo
+    # que hay que entregar.
+    if args.ventana == MENSUAL:
+        periodos = meses_completos(inv.dias_presentes)
+    else:
+        periodos = semanas_iso_completas(inv.dias_presentes)
+    parametros = ParametrosVentana.desde_yaml(args.ventana)
 
     titulo("2. PERIODOS")
-    print(f"semanas ISO completas: {len(periodos)}")
+    etiqueta = "meses" if args.ventana == MENSUAL else "semanas ISO"
+    print(f"{etiqueta} completos: {len(periodos)}")
     for per in periodos:
         print(f"  {per.etiqueta}  {per.inicio} .. {per.fin}")
     print()
@@ -311,9 +327,21 @@ def _correr(args) -> int:
     print(f"  umbral MAD                  {parametros.umbral_mad}")
     print(f"  minimo de quotes para MAD   {parametros.minimo_quotes_mad}")
 
-    if len(periodos) < 2:
-        print("\nhacen falta al menos 2 periodos completos para una variacion")
+    if not periodos:
+        print("\nno hay ningun periodo completo en el rango")
         return 1
+
+    # Con UN solo periodo no hay variacion, pero los quotes y la cobertura si se
+    # pueden calcular. Eso es lo que valida el camino antes de que haya dos meses
+    # cerrados: si algo se rompe, mejor verlo ahora que en octubre.
+    solo_uno = len(periodos) == 1
+    if solo_uno:
+        print()
+        print("Un solo periodo completo: no hay variacion que calcular.")
+        if args.ventana == MENSUAL:
+            print("Julio arranca el 27, asi que no es un mes cerrado; el primer")
+            print("numero mensual sale cuando cierre septiembre.")
+        print("Se calculan igual los quotes y la cobertura, para validar el camino.")
 
     # -- 4. quotes por periodo ---------------------------------------------- #
 
@@ -395,6 +423,19 @@ def _correr(args) -> int:
               f"{len(q.dias_presentes):>6} {len(q.huecos):>8}")
 
     # -- 5. variacion periodo contra periodo -------------------------------- #
+
+    if solo_uno:
+        titulo("5. VALIDACION DEL CAMINO")
+        print("Un solo periodo: no hay variacion, pero el camino quedo ejercitado")
+        print("de punta a punta sobre datos reales — lectura del bucket, colapso a")
+        print("quotes con los parametros de la ventana, ponderadores y cobertura.")
+        if inv.comercios_faltantes:
+            print()
+            print(f"{len(inv.comercios_faltantes)} dias tienen comercios que no "
+                  f"reportaron; sus quotes")
+            print("pueden caer bajo el minimo de dias y salir de la muestra.")
+        print("=" * ANCHO)
+        return 0
 
     pond = cargar_ponderadores(args.region, not args.sin_actualizar)
     variaciones: list[VariacionPeriodo] = []

@@ -319,7 +319,12 @@ reales.
 - Ventana temporal parametrizable (`src/reporte/periodo.py`): semanal y mensual con el mismo
   método, sólo cambian dos números de `config/parametros.yaml`.
 - Las dos series en paralelo: `precio_lista` y `precio_efectivo` (`--precio`).
-- Corrida de diagnóstico semanal (`scripts/correr_semanal.py`).
+- Corrida de diagnóstico (`scripts/correr_indice.py`), con la ventana como parámetro:
+  `--ventana semanal` o `--ventana mensual`. **Un solo script para las dos**, porque el
+  método es idéntico y sólo cambian dos números de `config/parametros.yaml`. Dos scripts
+  separados podrían divergir, y entonces lo que se aprende ensayando en semanal no diría
+  nada sobre el mensual.
+- Medición del filtro de outliers (`scripts/medir_outliers.py`).
 - **Reconciliación contra el repo de captura** (`scripts/reconciliar_mensual.py`). Es la
   única validación que no usa datos sintéticos: calcula los quotes de un mes acá y los cruza
   contra `staged/quotes_mensuales/`, que produce `relevamiento_precios` con otro código.
