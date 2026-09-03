@@ -273,10 +273,13 @@ config/
   ponderadores.yaml                     extraído del xls, versionado y legible
   regiones.yaml                         provincia → región + partidos del GBA
 src/reporte/
+  lectura.py                            lector del bucket con caché local
+  periodo.py                            ventana temporal (semanal / mensual)
   elemental.py                          Jevons y detección de outliers
   agregacion.py                         Laspeyres, renormalización, encadenamiento
-tests/
-  test_indice.py                        22 tests sobre datos sintéticos
+  imputacion.py                         quotes ausentes entre períodos
+  ponderadores.py                       ENGHo + INDEC, actualización por precios
+tests/                                  100 tests sobre datos sintéticos
 ```
 
 ## Tests
@@ -301,14 +304,10 @@ reales.
 
 ## Lo que falta
 
-- **Ponderadores por debajo de clase**: averiguar si la microdata de la ENGHo tiene apertura
-  por variedad. Hoy hay un supuesto que mueve el resultado ~50% — ver arriba. **Bloquea
-  publicar un número.**
-- Imputación de faltantes (un quote que desaparece 1-2 meses se imputa con la variación de
-  su categoría; si falta más de 2, sale de la muestra).
-- Revisión a mano de la clasificación: los 987 productos están con `revisado=no`, y el 41%
-  cayó en una sola categoría (`fideos_secos_500g`), lo que sugiere que la regla agarra de
-  más.
+- Revisión a mano de la clasificación: de 2.354 productos, 2.351 siguen con `revisado=no`.
+  La concentración en `fideos_secos_500g` bajó del 41% al 17,2% al abrir las 8 categorías
+  nuevas — parte de lo que la regla "agarraba de más" eran galletitas, snacks y mermelada
+  que no tenían dónde caer. Sigue siendo la categoría más grande y sigue sin revisarse.
 - Los dos juegos de ponderadores (ENGHo 2004/05 y 2017/18) en paralelo.
 - Persistencia en Postgres y la API.
 
@@ -325,6 +324,23 @@ reales.
   separados podrían divergir, y entonces lo que se aprende ensayando en semanal no diría
   nada sobre el mensual.
 - Medición del filtro de outliers (`scripts/medir_outliers.py`).
+- **Imputación de faltantes** (`src/reporte/imputacion.py`). Un quote que desaparece se
+  estima con la variación de su categoría, hasta 2 períodos; al tercero sale de la muestra.
+
+  Lo que no es obvio: **imputar así no mueve el índice del período en que se imputa**.
+  Jevons es el promedio de los log-ratios, y al promedio se le está agregando un valor que
+  *es* el promedio. Sirve para el período **siguiente**: sin imputar, un quote que falta se
+  pierde dos veces —una por no tener precio actual y otra por no tener base— y cuando vuelve
+  no aporta su variación real. Por eso el precio imputado no entra al cálculo del período y
+  se devuelve aparte, en `base_proximo_periodo`.
+
+  Arrastrar el último precio sería peor que no hacer nada: mete un 0% falso en el período
+  que falta y después descarga las dos variaciones juntas en el siguiente.
+
+  El supuesto es que el quote ausente se movió como su categoría. Con un producto suelto es
+  razonable; cuando **se cae un comercio entero** —el 20 perdió 11 días de agosto— se le
+  asigna el movimiento de un promedio dominado por las cadenas que sí reportaron.
+  `por_comercio()` está para poder ver cuándo pasa eso.
 - **Reconciliación contra el repo de captura** (`scripts/reconciliar_mensual.py`). Es la
   única validación que no usa datos sintéticos: calcula los quotes de un mes acá y los cruza
   contra `staged/quotes_mensuales/`, que produce `relevamiento_precios` con otro código.
@@ -333,7 +349,9 @@ reales.
   |---|---|---|
   | 2026-07, `precio_lista` | 464.810 | **0** |
   | 2026-07, `precio_efectivo` | 464.810 | **0** |
-  | 2026-08, `precio_lista` | 466.380 | **0** |
+  | 2026-08 parcial, `precio_lista` | 466.380 | **0** |
+  | 2026-08 **mes cerrado**, `precio_lista` | 1.217.904 | **0** |
+  | 2026-08 **mes cerrado**, `precio_efectivo` | 1.217.904 | **0** |
 
   Coinciden la clave, la mediana y el conteo de días, en todos los quotes. De paso quedó
   resuelto que `id_bandera` no parte quotes: agrupar por 3 campos o por 4 da el mismo total
