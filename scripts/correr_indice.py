@@ -438,6 +438,11 @@ def _correr(args) -> int:
         return 0
 
     pond = cargar_ponderadores(args.region, not args.sin_actualizar)
+    # Los pesos de `pond` estan renormalizados a 1 sobre las clases del piloto:
+    # son los que necesita Laspeyres. Para decir que fraccion del IPC mide el
+    # indice hacen falta los del archivo, sin renormalizar, que suman 1 sobre la
+    # canasta completa. Calcularlo sobre `pond` da 100% siempre.
+    pond_crudos = ponderadores_de_clase(args.region)
     variaciones: list[VariacionPeriodo] = []
 
     for base_per, act_per in zip(periodos, periodos[1:]):
@@ -608,12 +613,12 @@ def _correr(args) -> int:
                       f"puntos de aumento que no existe")
             print()
             cubierto = sum(
-                pond[c][1] for c in indices_clase if c in pond
+                pond_crudos[c][1] for c in indices_clase if c in pond_crudos
             )
             print(f"cobertura           {agregado.cobertura*100:.1f}% del peso del "
-                  f"piloto ({cubierto:.4f} de {sum(pesos_universo.values()):.4f})")
-            print(f"                    {cubierto*100:.2f}% del IPC nacional "
-                  f"({args.region})")
+                  f"piloto ({sum(pesos_universo.values()):.4f} renormalizado)")
+            print(f"                    {cubierto*100:.2f}% del IPC {args.region} "
+                  f"({cubierto:.4f} de 1.0000 de la canasta completa)")
             variaciones.append(VariacionPeriodo(base_per, act_per, agregado.indice))
 
         # -- diagnostico --
