@@ -223,16 +223,48 @@ class ResultadoQuotes:
         return len(self.descartados_por_dias)
 
 
+# Como se colapsan los precios diarios de un quote al precio del periodo.
+#
+# `mediana` es el default y es lo que calcula el repo de captura, asi que es el
+# unico valor con el que la reconciliacion da identico.
+#
+# `media` es lo que hace el INDEC para supermercados: "primero se calcula la
+# media aritmetica de los precios positivos observados durante el mes" (formula
+# 6, seccion 5.1 de la metodologia del IPC Nacional 2019, en docs/). Importa
+# porque la mediana ignora cuantos dias rigio cada precio: si una cadena remarca
+# el dia 20 de 30, la mediana devuelve el precio viejo y el aumento aparece
+# recien al mes siguiente.
+#
+# `geometrica` esta para descartarla como explicacion, no porque alguien la use
+# a este nivel: la geometrica del INDEC es ENTRE informantes, no dentro del mes.
+AGREGADORES = {
+    "mediana": "median({c})",
+    "media": "avg({c})",
+    "geometrica": "exp(avg(ln({c})))",
+}
+AGREGADOR_DEFAULT = "mediana"
+
+
+# =========================================================== CRITICO 1 de 8 ===
+# QUE HACE     el precio del mes de cada quote, a partir de sus precios diarios
+# FORMULA      el agregador de AGREGADORES: avg(), median() o exp(avg(ln()))
+# POR QUE ASI  el default es avg() porque es la formula del INDEC para
+#              supermercados (formula 6, seccion 5.1 de la metodologia, en docs/)
+# LO VERIFICA  tests/test_periodo.py::test_el_agregador_cambia_el_precio_del_mes_y_la_mediana_es_el_default
+# FALLA ASI    es el error que ya cometimos. Con mediana el indice daba +1,1633%
+#              y con promedio +1,2862% sobre el mismo mes. Las dos cuentas
+#              corren, ninguna rompe, y el numero equivocado es plausible.
+# ============================================================================
 def quotes_del_periodo(
     observaciones: duckdb.DuckDBPyRelation,
     periodo: Periodo,
     parametros: ParametrosVentana,
     columna_precio: str = COLUMNA_LISTA,
+    agregador: str = AGREGADOR_DEFAULT,
 ) -> ResultadoQuotes:
     """Colapsa las observaciones diarias del periodo a un precio por quote.
 
-    La mediana y no el promedio: un solo precio mal cargado desplaza el promedio
-    y no mueve la mediana.
+    `agregador` elige como: ver AGREGADORES arriba.
 
     Los quotes con menos de `minimo_dias_quote` dias observados se descartan pero
     se devuelven en `descartados_por_dias`, no se pierden en silencio: son la
@@ -245,11 +277,16 @@ def quotes_del_periodo(
         )
     if columna_precio not in (COLUMNA_LISTA, COLUMNA_EFECTIVO):
         raise ValueError(f"columna de precio desconocida: {columna_precio!r}")
+    if agregador not in AGREGADORES:
+        raise ValueError(
+            f"agregador desconocido: {agregador!r} "
+            f"(hay: {', '.join(sorted(AGREGADORES))})"
+        )
 
     sql = f"""
         SELECT
             id_comercio, id_sucursal, id_producto,
-            median({columna_precio})  AS precio,
+            {AGREGADORES[agregador].format(c=columna_precio)} AS precio,
             count(DISTINCT fecha)     AS n_dias
         FROM obs
         WHERE fecha BETWEEN DATE '{periodo.inicio}' AND DATE '{periodo.fin}'

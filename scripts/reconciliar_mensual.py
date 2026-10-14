@@ -142,7 +142,12 @@ def main(argv=None) -> int:
         etiqueta=f"{args.anio}-{args.mes:02d}", tipo=MENSUAL,
     )
     obs = lector.observaciones(periodo.inicio, periodo.fin, productos=productos)
-    nuestro = quotes_del_periodo(obs, periodo, PARAMS_CRUDOS, args.columna)
+    # Mediana explicita, no el default del script del indice: el trabajo de la
+    # reconciliacion es comparar contra el colapso del repo de captura, que
+    # calcula mediana. Con otro agregador no estaria validando nada.
+    nuestro = quotes_del_periodo(
+        obs, periodo, PARAMS_CRUDOS, args.columna, agregador="mediana"
+    )
     print(f"quotes calculados aca      {nuestro.n_quotes:>14,}")
 
     con.execute(

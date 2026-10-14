@@ -475,6 +475,20 @@ def factores_actualizacion(
     return factores
 
 
+# =========================================================== CRITICO 6 de 8 ===
+# QUE HACE     lleva los ponderadores de clase a la base de precios del indice
+# FORMULA      peso'(c) = peso(c) x factor(c) / suma( peso(j) x factor(j) )
+# POR QUE ASI  Laspeyres pide que los pesos esten a precios de la base. Los de
+#              la ENGHo son de 2017/18 y la base de precios es otra, asi que hay
+#              que reescalarlos por cuanto subio cada clase.
+# LO VERIFICA  tests/test_indice.py::test_actualizar_reescala_por_el_precio_relativo
+#              y test_un_factor_parejo_no_cambia_nada
+# FALLA ASI    una clase sin factor queda AFUERA del resultado. Si eso pasa sin
+#              que nadie lo vea, el indice sale sobre menos canasta: por eso
+#              `factores_actualizacion` corta con excepcion cuando una clase
+#              declarada no esta en la planilla, y por eso el reporte corta si
+#              una clase de la taxonomia no tiene ponderador.
+# ============================================================================
 def actualizar_por_precios(
     pond: dict[str, tuple[str, float]], factores: dict[str, float]
 ) -> dict[str, tuple[str, float]]:

@@ -19,6 +19,7 @@ de la muestra por falta de emparejamiento.
 from __future__ import annotations
 
 import dataclasses
+from collections import defaultdict
 
 # El indice cubre una parte de la canasta, no toda. Los pesos del INDEC suman 1
 # sobre el total, asi que hay que reescalarlos sobre lo efectivamente cubierto.
@@ -65,6 +66,44 @@ def renormalizar(pesos: dict[str, float]) -> dict[str, float]:
     return {k: v / total for k, v in pesos.items()}
 
 
+# ==================================================== GUARDA de CRITICO 6 ===
+# QUE HACE     corta la corrida si una clase de la taxonomia no tiene ponderador
+# FORMULA      clases_taxonomia - claves(pond)
+# POR QUE ASI  sin esto la clase se excluye sola y no deja rastro: no entra al
+#              numerador ni al denominador de Laspeyres, asi que la cobertura
+#              sigue informando 100% sobre una canasta mas chica
+# LO VERIFICA  tests/test_indice.py::test_una_clase_de_la_taxonomia_sin_ponderador_se_detecta
+# FALLA ASI    se dispara al agregar una clase a la taxonomia sin declararla en
+#              config/indices_ipc.yaml, que es justo el proximo paso del plan
+# ===========================================================================
+def clases_sin_ponderador(
+    clases_taxonomia: set[str], pond: dict[str, tuple[str, float]]
+) -> list[str]:
+    """Clases que estan en la taxonomia y no tienen ponderador.
+
+    Es la guarda de la operacion 7. Una clase sin ponderador no entra ni al
+    numerador ni al denominador de Laspeyres, asi que la cobertura sigue
+    diciendo 100% y el indice queda calculado sobre menos canasta sin que nada
+    avise. Devolver la lista permite cortar antes de dar un numero.
+    """
+    return sorted(c for c in clases_taxonomia if c not in pond)
+
+
+# =========================================================== CRITICO 7 de 8 ===
+# QUE HACE     clases COICOP -> nivel del indice
+# FORMULA      suma( peso_renormalizado(clase) x indice(clase) ), sobre las
+#              clases que tienen indice Y peso > 0
+# POR QUE ASI  aritmetica ponderada porque arriba si hay ponderadores. Se
+#              renormaliza porque los pesos del INDEC suman 1 sobre la canasta
+#              completa y el indice cubre una parte: sin reescalar, el numero
+#              sale dividido por la cobertura.
+# LO VERIFICA  tests/test_indice.py::test_sin_renormalizar_el_numero_no_es_interpretable
+#              y test_una_clase_sin_dato_no_se_imputa_con_el_promedio
+# FALLA ASI    una clase con peso y sin dato queda afuera del numerador Y del
+#              denominador, que es lo correcto, pero entonces el indice es de
+#              una canasta mas chica. Eso se ve solo en la linea de cobertura:
+#              si dice menos de 100%, falta una clase.
+# ============================================================================
 def laspeyres(
     indices: dict[str, float],
     pesos: dict[str, float],
@@ -102,6 +141,78 @@ def agregar(
     )
 
 
+@dataclasses.dataclass(slots=True)
+class ClasesDesdeCategorias:
+    """Lo que entro a cada clase, y lo que quedo afuera.
+
+    Los descartes se devuelven en vez de saltearse: una categoria que
+    desaparece sin aviso deja el indice calculado sobre menos canasta, y el
+    numero sigue pareciendo correcto.
+    """
+
+    indices: dict[str, float]
+    sin_clase: list[str] = dataclasses.field(default_factory=list)
+    sin_peso: list[str] = dataclasses.field(default_factory=list)
+    categorias_por_clase: dict[str, int] = dataclasses.field(default_factory=dict)
+
+
+# =========================================================== CRITICO 5 de 8 ===
+# QUE HACE     media ponderada de las categorias elementales dentro de cada
+#              clase COICOP. Es el escalon entre Jevons y Laspeyres.
+# FORMULA      indice(clase) = suma( peso(cat) x indice(cat) ) / suma( peso(cat) )
+#              sobre las categorias de esa clase que tienen peso > 0
+# POR QUE ASI  aritmetica y ponderada porque aca ya hay ponderadores y los
+#              rubros no son sustitutos entre si
+# LO VERIFICA  tests/test_indice.py, los cinco tests que empiezan con
+#              test_las_categorias_a_clases_*
+# FALLA ASI    si una categoria pierde su clase COICOP o su peso, desaparece de
+#              la cuenta. El indice de esa clase queda calculado sobre menos
+#              articulos y no hay forma de verlo en el numero. Por eso los dos
+#              descartes salen contados en `sin_clase` y `sin_peso`, y la
+#              corrida los imprime.
+# ============================================================================
+def clases_desde_categorias(
+    indices_cat: dict[str, float],
+    clase_de_categoria: dict[str, str],
+    pesos_cat: dict[str, float],
+) -> ClasesDesdeCategorias:
+    acum: dict[str, list[float]] = defaultdict(lambda: [0.0, 0.0])
+    cuenta: dict[str, int] = defaultdict(int)
+    sin_clase: list[str] = []
+    sin_peso: list[str] = []
+
+    for cat, indice in indices_cat.items():
+        clase = clase_de_categoria.get(cat)
+        if clase is None:
+            sin_clase.append(cat)
+            continue
+        peso = pesos_cat.get(cat, 0.0)
+        if peso <= 0:
+            sin_peso.append(cat)
+            continue
+        acum[clase][0] += peso * indice
+        acum[clase][1] += peso
+        cuenta[clase] += 1
+
+    return ClasesDesdeCategorias(
+        indices={c: num / den for c, (num, den) in acum.items() if den > 0},
+        sin_clase=sorted(sin_clase),
+        sin_peso=sorted(sin_peso),
+        categorias_por_clase=dict(cuenta),
+    )
+
+
+# =========================================================== CRITICO 8 de 8 ===
+# QUE HACE     el nivel del indice mes a mes
+# FORMULA      indice_t = indice_{t-1} x variacion_t
+# POR QUE ASI  multiplicativo y nunca contra la base directa: la canasta rota, y
+#              comparar contra un mes lejano tiraria la mitad de la muestra por
+#              falta de emparejamiento
+# LO VERIFICA  tests/test_indice.py::test_encadenar_es_multiplicativo_no_aditivo
+# FALLA ASI    sumar variaciones en vez de multiplicarlas da casi lo mismo con
+#              numeros chicos y se va acumulando. Con 2% por 12 meses la
+#              diferencia es 26,8% contra 24%.
+# ============================================================================
 def encadenar(nivel_anterior: float, variacion: float) -> float:
     """`indice_t = indice_{t-1} x variacion_t`."""
     return nivel_anterior * variacion

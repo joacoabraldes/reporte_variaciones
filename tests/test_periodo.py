@@ -144,6 +144,43 @@ def test_semana_y_mes_dan_quotes_coherentes_sobre_la_misma_serie():
     assert men.n_dias[clave] == 31
 
 
+def test_el_agregador_cambia_el_precio_del_mes_y_la_mediana_es_el_default():
+    """El caso que importa: una remarcacion despues de la mitad del mes.
+
+    30 dias, el precio sube de 1.000 a 1.200 el dia 21. La mediana devuelve 1.000
+    porque 20 de los 30 dias el precio fue 1.000: el aumento no existe para el
+    indice hasta el mes siguiente. La media aritmetica, que es la que usa el
+    INDEC para supermercados, lo reparte: (20*1000 + 10*1200)/30 = 1066,67.
+    """
+    fechas = dias(date(2026, 8, 1), 30)
+    filas = [
+        (d, "10", "7", "EAN1", 1000.0 if i < 20 else 1200.0, 1000.0 if i < 20 else 1200.0)
+        for i, d in enumerate(fechas)
+    ]
+    r = obs(filas)
+    mes = Periodo.mes(2026, 8)
+    clave = ("10", "7", "EAN1")
+
+    por_defecto = quotes_del_periodo(r, mes, params(MENSUAL, 20))
+    mediana = quotes_del_periodo(r, mes, params(MENSUAL, 20), agregador="mediana")
+    media = quotes_del_periodo(r, mes, params(MENSUAL, 20), agregador="media")
+    geometrica = quotes_del_periodo(r, mes, params(MENSUAL, 20), agregador="geometrica")
+
+    assert por_defecto.precios[clave] == mediana.precios[clave]
+    assert mediana.precios[clave] == 1000.0
+    assert media.precios[clave] == pytest.approx(1066.6667, abs=1e-3)
+    # Geometrica: (1000^20 * 1200^10)^(1/30) = 1000 * 1.2^(1/3)
+    assert geometrica.precios[clave] == pytest.approx(1000 * 1.2 ** (1 / 3), abs=1e-3)
+
+
+def test_un_agregador_que_no_existe_es_un_error():
+    filas = [(d, "10", "7", "EAN1", 1000.0, 1000.0) for d in dias(date(2026, 8, 1), 30)]
+    with pytest.raises(ValueError, match="agregador desconocido"):
+        quotes_del_periodo(
+            obs(filas), Periodo.mes(2026, 8), params(MENSUAL, 20), agregador="moda"
+        )
+
+
 def test_la_mediana_ignora_un_precio_mal_cargado():
     """Un cero de mas un solo dia no mueve la mediana."""
     filas = [(d, "10", "7", "EAN1", 1000.0, 1000.0) for d in dias(date(2026, 8, 10), 7)]

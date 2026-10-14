@@ -26,6 +26,39 @@ ventanas:
     # aumentos grandes pero legitimos.
     tope_ratio: 2.0
 
+    # MEDIDO sobre agosto -> septiembre, 6 oct 2026. Tres variantes del filtro
+    # sobre los MISMOS 1.080.595 quotes emparejados:
+    #
+    #   umbral_mad   a cuarentena   variacion
+    #   3.5 (este)        10,01%     +1,1633%
+    #   5.0                5,20%     +1,2924%
+    #   .inf (apagado)     0,10%     +1,5753%
+    #
+    # Las tres se corren con --umbral-mad, sin tocar este archivo.
+    #
+    # PENDIENTE, y el criterio ya esta fijado: se elige la variante cuando el
+    # INDEC publique septiembre, comparando contra la division "Alimentos y
+    # bebidas no alcoholicas" y no contra el nivel general. Queda la que mejor
+    # siga al numero oficial, no la que de mas lindo ni la que parezca mas
+    # prolija. Hasta entonces el default es 3.5 y no se mueve.
+    #
+    # Lo que ya se sabe del 3.5, para que no haya que volver a medirlo:
+    #
+    # 1. El 59,7% de los precios no se movio entre los dos meses. Con mas de la
+    #    mitad de los log-ratios en cero la dispersion da cero, asi que en 9 de
+    #    20 articulos el criterio NO llegaba a aplicarse y quedaba solo el tope.
+    # 2. Donde si habia dispersion descartaba entre el 20% y el 50% de las
+    #    observaciones, y siempre de los articulos que mas se movieron. El caso
+    #    extremo es harina 0000: reportaba +0,002% con 5.405 de sus 10.873
+    #    ratios en cuarentena; sin filtro da +4,384%.
+    # 3. El error de dato ya esta filtrado antes de llegar aca: el precio
+    #    mensual de cada quote es la MEDIANA de sus precios diarios, asi que un
+    #    scrapeo malo de un dia no sobrevive al mes.
+    #
+    # Si la comparacion contra el INDEC dice que hace falta filtrar pero 3.5
+    # descarta demasiado, la salida no es buscar un umbral intermedio a ojo: es
+    # ponerle un piso a la dispersion, para que el criterio se aplique solo
+    # cuando midio algo. Eso es codigo nuevo en elemental.py.
     umbral_mad: 3.5
     minimo_quotes_mad: 15
 

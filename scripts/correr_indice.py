@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import argparse
 import contextlib
+import dataclasses
 import logging
 import sys
 from collections import defaultdict
@@ -39,7 +40,12 @@ import yaml
 RAIZ = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(RAIZ / "src"))
 
-from reporte.agregacion import agregar, laspeyres  # noqa: E402
+from reporte.agregacion import (  # noqa: E402
+    agregar,
+    clases_desde_categorias,
+    clases_sin_ponderador,
+    laspeyres,
+)
 from reporte.elemental import (  # noqa: E402
     detectar_outliers,
     emparejar,
@@ -64,6 +70,8 @@ from reporte.ponderadores import (  # noqa: E402
     ponderadores_de_clase,
 )
 from reporte.periodo import (  # noqa: E402
+    AGREGADORES,
+    AGREGADOR_DEFAULT,
     MENSUAL,
     SEMANAL,
     ClaveQuote,
@@ -176,23 +184,6 @@ def pesos_de_criterio(
     raise ValueError(f"criterio de ponderacion desconocido: {criterio!r}")
 
 
-def agregar_categorias_a_clases(
-    indices_cat: dict[str, float],
-    clase_de_categoria: dict[str, str],
-    pesos_cat: dict[str, float],
-) -> dict[str, float]:
-    """Media ponderada de las categorias dentro de cada clase COICOP."""
-    acum: dict[str, list[float]] = defaultdict(lambda: [0.0, 0.0])
-    for cat, indice in indices_cat.items():
-        clase = clase_de_categoria.get(cat)
-        if clase is None:
-            continue
-        peso = pesos_cat.get(cat, 0.0)
-        acum[clase][0] += peso * indice
-        acum[clase][1] += peso
-    return {c: num / den for c, (num, den) in acum.items() if den > 0}
-
-
 # --------------------------------------------------------------------------- #
 # Reporte
 # --------------------------------------------------------------------------- #
@@ -249,6 +240,33 @@ def main(argv=None) -> int:
     p.add_argument("--sin-actualizar", action="store_true",
                    help="no actualiza los ponderadores por la evolucion de "
                         "precios (para comparar contra la version anterior)")
+    # Overrides del filtro de outliers, para analisis de sensibilidad. Sin
+    # ellos manda config/parametros.yaml, que es la configuracion de verdad.
+    # Existen para poder mostrar el mismo mes con tres filtros distintos sin
+    # editar el YAML entre corridas, que es como se pierde la trazabilidad de
+    # con que parametros salio cada numero.
+    # Como se colapsan los precios diarios de un quote al precio del mes.
+    #
+    # El default es 'media' porque es la formula del INDEC: "para el caso de los
+    # supermercados... primero se calcula la media aritmetica de los precios
+    # positivos observados durante el mes" (formula 6, seccion 5.1 de la
+    # metodologia del IPC Nacional 2019, en docs/).
+    #
+    # Medido sobre agosto -> septiembre, pasar de mediana a media sube el indice
+    # 0,12 puntos con el filtro default y 0,24 con el filtro apagado. La
+    # geometrica da lo mismo que la media (0,02 puntos de diferencia): lo que
+    # importa es mediana contra promedio, no cual promedio.
+    #
+    # 'mediana' sigue disponible y es lo que usa la reconciliacion, porque es lo
+    # que calcula el repo de captura.
+    p.add_argument("--agregador", default="media",
+                   choices=sorted(AGREGADORES),
+                   help="colapso de precios diarios a precio del mes")
+    p.add_argument("--umbral-mad", type=float, default=None,
+                   help="pisa el umbral MAD del YAML. 'inf' desactiva el filtro "
+                        "estadistico y deja solo el tope absoluto")
+    p.add_argument("--tope-ratio", type=float, default=None,
+                   help="pisa la banda del tope absoluto del YAML")
     p.add_argument("-v", "--verboso", action="store_true")
     args = p.parse_args(argv)
 
@@ -310,6 +328,14 @@ def _correr(args) -> int:
     else:
         periodos = semanas_iso_completas(inv.dias_presentes)
     parametros = ParametrosVentana.desde_yaml(args.ventana)
+    if args.umbral_mad is not None or args.tope_ratio is not None:
+        parametros = dataclasses.replace(
+            parametros,
+            umbral_mad=(parametros.umbral_mad if args.umbral_mad is None
+                        else args.umbral_mad),
+            tope_ratio=(parametros.tope_ratio if args.tope_ratio is None
+                        else args.tope_ratio),
+        )
 
     titulo("2. PERIODOS")
     etiqueta = "meses" if args.ventana == MENSUAL else "semanas ISO"
@@ -321,10 +347,14 @@ def _correr(args) -> int:
           + ("" if args.sin_actualizar else ", actualizados por precios"))
     print()
     print(f"parametros de la ventana '{parametros.tipo}':")
+    print(f"  agregador del mes           {args.agregador}"
+          + ("  (el del INDEC para supermercados)" if args.agregador == "media" else ""))
     print(f"  minimo de dias por quote   {parametros.minimo_dias_quote}")
     print(f"  tope absoluto del ratio     [{1/parametros.tope_ratio:.3f} , "
           f"{parametros.tope_ratio:.3f}]")
-    print(f"  umbral MAD                  {parametros.umbral_mad}")
+    print(f"  umbral MAD                  {parametros.umbral_mad}"
+          + ("  (desactivado: solo tope absoluto)"
+             if parametros.umbral_mad == float("inf") else ""))
     print(f"  minimo de quotes para MAD   {parametros.minimo_quotes_mad}")
 
     if not periodos:
@@ -417,7 +447,7 @@ def _correr(args) -> int:
     print("-" * ANCHO)
     resultados = {}
     for per in periodos:
-        q = quotes_del_periodo(obs, per, parametros, args.precio)
+        q = quotes_del_periodo(obs, per, parametros, args.precio, args.agregador)
         resultados[per.etiqueta] = q
         print(f"{per.etiqueta:<12} {q.n_quotes:>12,} {q.n_descartados:>14,} "
               f"{len(q.dias_presentes):>6} {len(q.huecos):>8}")
@@ -537,14 +567,33 @@ def _correr(args) -> int:
             cuenta_cats[clase_de_articulo[art]] += 1
 
         por_criterio: dict[str, dict[str, float]] = {}
+        descartes_clase = None
         for criterio in CRITERIOS:
             pesos_art = pesos_de_criterio(
                 criterio, indices_art, n_prod_art, n_quotes_art, pesos_engho
             )
-            por_criterio[criterio] = agregar_categorias_a_clases(
+            paso = clases_desde_categorias(
                 indices_art, clase_de_articulo, pesos_art
             )
+            por_criterio[criterio] = paso.indices
+            if criterio == "engho":
+                descartes_clase = paso
         indices_clase = por_criterio["engho"]
+
+        # Los articulos que no llegaron a ninguna clase. Antes se salteaban en
+        # silencio y el indice quedaba calculado sobre menos canasta.
+        if descartes_clase.sin_clase:
+            print()
+            print(f"ATENCION {len(descartes_clase.sin_clase)} articulos sin clase "
+                  f"COICOP: NO entran al indice")
+            for a in descartes_clase.sin_clase[:10]:
+                print(f"  - {a}")
+        if descartes_clase.sin_peso:
+            print()
+            print(f"ATENCION {len(descartes_clase.sin_peso)} articulos sin peso "
+                  f"ENGHo: NO entran al indice")
+            for a in descartes_clase.sin_peso[:10]:
+                print(f"  - {a}")
 
         # -- Jevons vs promedio simple, por articulo --------------------- #
         print()
@@ -577,19 +626,32 @@ def _correr(args) -> int:
                   f"{cuenta_cats[clase]:>5}")
 
         # -- clases -> nivel del indice (Laspeyres con pesos del INDEC) --
-        pesos_universo = {
-            c: pond[c][1] for c in set(clase_de_categoria.values()) if c in pond
-        }
+        #
+        # Guarda de la operacion 6: ver clases_sin_ponderador en agregacion.py.
+        clases_taxonomia = set(clase_de_categoria.values())
+        sin_ponderador = clases_sin_ponderador(clases_taxonomia, pond)
+        if sin_ponderador:
+            print()
+            print("ERROR: estas clases estan en la taxonomia y no tienen "
+                  "ponderador:")
+            for c in sin_ponderador:
+                print(f"  - {c}")
+            print("  Declararlas en config/indices_ipc.yaml o sacarlas de la "
+                  "taxonomia.")
+            print("  Si se las dejara afuera, el indice saldria sobre menos "
+                  "canasta y la cobertura seguiria diciendo 100%.")
+            return 1
+        pesos_universo = {c: pond[c][1] for c in clases_taxonomia}
         agregados = {
             c: agregar("PILOTO", "Cobertura del piloto", por_criterio[c], pesos_universo)
             for c in CRITERIOS
         }
         # El mismo camino de agregacion pero con los elementales de Carli.
-        clases_carli = agregar_categorias_a_clases(
+        clases_carli = clases_desde_categorias(
             indices_carli, clase_de_articulo,
             pesos_de_criterio("engho", indices_carli, n_prod_art, n_quotes_art,
                               pesos_engho),
-        )
+        ).indices
         agregado_carli = agregar("PILOTO", "P", clases_carli, pesos_universo)
         agregado = agregados["engho"]
 
@@ -653,8 +715,18 @@ def _correr(args) -> int:
     # -- 7. lo que hay que mirar -------------------------------------------- #
 
     titulo("7. ADVERTENCIAS")
-    print("- Meses incompletos: julio y agosto no estan cerrados. Esto NO es el")
-    print("  indice mensual y no se deriva encadenando estas semanas.")
+    # La advertencia de la ventana semanal decia que agosto no estaba cerrado y
+    # que esto no era el indice mensual. En la corrida mensual eso es falso y es
+    # justo el tipo de texto que, leido de afuera, hace desconfiar del resto.
+    if args.ventana == SEMANAL:
+        print("- Serie DIAGNOSTICA: el indice semanal no se publica y el mensual")
+        print("  NO se deriva encadenando estas semanas. Son dos muestras")
+        print("  emparejadas distintas, calculadas cada una desde las")
+        print("  observaciones diarias.")
+    else:
+        print(f"- Meses cerrados y comparados: {len(periodos)}"
+              f" ({', '.join(p.etiqueta for p in periodos)}).")
+        print("  Julio queda afuera: tiene 5 dias de captura, no es un mes.")
     print("- Ponderadores por debajo de clase: RESUELTO. Salen del gasto de los")
     print("  hogares de la ENGHo 2017/18 (microdatos publicos del INDEC), con el")
     print("  mismo procedimiento que uso el INDEC para los suyos. Los otros tres")

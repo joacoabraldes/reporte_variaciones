@@ -14,6 +14,8 @@ import pytest
 from reporte.agregacion import (
     MODO_CRUDO,
     agregar,
+    clases_desde_categorias,
+    clases_sin_ponderador,
     encadenar,
     laspeyres,
     renormalizar,
@@ -185,6 +187,80 @@ def test_los_outliers_se_miden_sobre_log_ratio_y_son_simetricos():
 # --------------------------------------------------------------------------- #
 # Laspeyres
 # --------------------------------------------------------------------------- #
+
+
+# --------------------------------------------------------------------------- #
+# CRITICO 5 de 8: categorias elementales -> clases COICOP
+#
+# Era la unica de las ocho operaciones criticas sin un solo test, y es donde se
+# perdian categorias en silencio. Los numeros de abajo estan hechos a mano.
+# --------------------------------------------------------------------------- #
+
+
+def test_las_categorias_a_clases_es_media_ponderada():
+    """Peso 1 al +10% y peso 3 al +20%: (1x1,10 + 3x1,20) / 4 = 1,175."""
+    r = clases_desde_categorias(
+        {"a": 1.10, "b": 1.20},
+        {"a": "01.1.1", "b": "01.1.1"},
+        {"a": 1.0, "b": 3.0},
+    )
+    assert r.indices["01.1.1"] == pytest.approx(1.175)
+    assert r.categorias_por_clase == {"01.1.1": 2}
+    assert r.sin_clase == [] and r.sin_peso == []
+
+
+def test_las_categorias_a_clases_no_mezcla_clases():
+    r = clases_desde_categorias(
+        {"pan": 1.50, "leche": 1.10},
+        {"pan": "01.1.1", "leche": "01.1.4"},
+        {"pan": 1.0, "leche": 1.0},
+    )
+    assert r.indices == pytest.approx({"01.1.1": 1.50, "01.1.4": 1.10})
+
+
+def test_las_categorias_a_clases_cuenta_la_que_no_tiene_clase():
+    """El descarte que importa: antes se salteaba con un `continue`."""
+    r = clases_desde_categorias(
+        {"pan": 1.50, "huerfana": 9.99},
+        {"pan": "01.1.1"},
+        {"pan": 1.0, "huerfana": 1.0},
+    )
+    assert r.indices["01.1.1"] == pytest.approx(1.50)
+    assert r.sin_clase == ["huerfana"]
+
+
+def test_las_categorias_a_clases_cuenta_la_que_no_tiene_peso():
+    """Una categoria con peso cero no participa, y queda registrada.
+
+    Sin el registro, perder el peso de una categoria baja la canasta sobre la
+    que se calcula la clase y el numero sigue pareciendo correcto.
+    """
+    r = clases_desde_categorias(
+        {"pan": 1.50, "galletitas": 9.99},
+        {"pan": "01.1.1", "galletitas": "01.1.1"},
+        {"pan": 1.0},
+    )
+    assert r.indices["01.1.1"] == pytest.approx(1.50)
+    assert r.sin_peso == ["galletitas"]
+    assert r.categorias_por_clase == {"01.1.1": 1}
+
+
+def test_las_categorias_a_clases_sin_nada_que_agregar():
+    r = clases_desde_categorias({"a": 1.1}, {}, {"a": 1.0})
+    assert r.indices == {}
+    assert r.sin_clase == ["a"]
+
+
+def test_una_clase_de_la_taxonomia_sin_ponderador_se_detecta():
+    """La guarda de la operacion 7.
+
+    Sin esto la clase se excluye sola, no entra al denominador, y la cobertura
+    sigue informando 100% sobre una canasta mas chica.
+    """
+    pond = {"01.1.1": ("Pan y cereales", 0.4)}
+    assert clases_sin_ponderador({"01.1.1"}, pond) == []
+    assert clases_sin_ponderador({"01.1.1", "01.1.2"}, pond) == ["01.1.2"]
+    assert clases_sin_ponderador({"01.1.4", "01.1.2"}, pond) == ["01.1.2", "01.1.4"]
 
 
 def test_laspeyres_es_media_aritmetica_ponderada():

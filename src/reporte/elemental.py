@@ -97,6 +97,22 @@ def rango_intercuartil(valores: list[float]) -> float:
     return q3 - q1
 
 
+# =========================================================== CRITICO 3 de 8 ===
+# QUE HACE     descarta ratios sospechosos antes de promediar
+# FORMULA      1) tope absoluto: fuera si ratio >= tope o <= 1/tope
+#              2) dispersion: fuera si |log_ratio - mediana| > umbral x dispersion
+#              con dispersion = MAD, y si da 0 el rango intercuartil / 2, y si
+#              eso tambien da 0 queda solo el tope
+# POR QUE ASI  sobre log(ratio) porque el log-return es simetrico: +50% y -33,3%
+#              se cancelan
+# LO VERIFICA  tests/test_indice.py::test_el_mad_cero_no_manda_todo_a_cuarentena
+#              y test_el_tope_absoluto_caza_un_error_de_tipeo
+# FALLA ASI    en goindola el 59,7% de los precios no se mueve, asi que la
+#              dispersion da cero seguido y el criterio se cae a los fallbacks
+#              sin avisar. Con umbral 3,5 descarta el 10% de la muestra y baja
+#              el indice 0,41 puntos; el numero sigue siendo plausible. El
+#              umbral esta en discusion y se elige contra el dato del INDEC.
+# ============================================================================
 def detectar_outliers(
     relativos: list[Relativo],
     umbral_mad: float = UMBRAL_MAD_DEFAULT,
@@ -167,6 +183,16 @@ def detectar_outliers(
     return limpios, descartes, umbral_usado
 
 
+# =========================================================== CRITICO 2 de 8 ===
+# QUE HACE     la muestra emparejada: que quotes entran a la variacion
+# FORMULA      solo los quotes con precio en los DOS meses y los dos positivos
+# POR QUE ASI  un producto nuevo no tiene contra que compararse, y uno que
+#              desaparecio tampoco
+# LO VERIFICA  tests/test_indice.py::test_solo_entran_los_quotes_presentes_en_los_dos_meses
+# FALLA ASI    si entrara un quote sin base, su relativo seria division por cero
+#              o un ratio inventado. Si se arrastrara el ultimo precio en vez de
+#              dejarlo afuera, se estaria afirmando que no cambio.
+# ============================================================================
 def emparejar(
     base: dict[tuple, float], actual: dict[tuple, float]
 ) -> tuple[list[Relativo], list[Descarte]]:
@@ -196,6 +222,18 @@ def emparejar(
     return relativos, descartes
 
 
+# =========================================================== CRITICO 4 de 8 ===
+# QUE HACE     la variacion de una categoria elemental
+# FORMULA      exp( promedio( ln(precio_actual / precio_base) ) )
+# POR QUE ASI  media geometrica y no aritmetica: abajo no hay ponderadores y los
+#              productos son sustitutos. La aritmetica de relativos tiene drift
+#              de Carli. En logaritmos porque multiplicar 5.000 ratios desborda.
+# LO VERIFICA  tests/test_indice.py::test_jevons_es_media_geometrica y
+#              test_precios_que_suben_y_vuelven_dan_cero_acumulado
+# FALLA ASI    con promedio simple el indice sube 0,19 puntos de aumento que no
+#              existe, y el sesgo es siempre hacia arriba. Medido: el promedio
+#              simple da >= Jevons en los 20 articulos, sin excepcion.
+# ============================================================================
 def jevons(relativos: list[Relativo]) -> float | None:
     """Media geometrica de los relativos, computada en logaritmos."""
     if not relativos:
