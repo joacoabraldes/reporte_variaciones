@@ -6,4 +6,6 @@ __pycache__/
 *.parquet
 salida/
 .cache/
+.cache_sondeo/
 .env
+datos_online/

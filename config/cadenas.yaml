@@ -1,0 +1,148 @@
+# Cadenas con catálogo online, y su identidad en SEPA.
+#
+# El `id_comercio` es el código de informante que usa SEPA. No es adivinable:
+# sale de leer `comercio_nombre` en las observaciones de un día. Los que están
+# en `null` todavía no se identificaron.
+#
+# `plataforma: vtex` significa que el catálogo se lee con un pedido a
+# `/api/catalog_system/pub/products/search/{termino}`, que devuelve por producto
+# el EAN, la marca, la categoría y los dos precios. No hay que parsear HTML.
+#
+# Las que figuran en `sin_api` se verificaron a mano y NO sirven por esa vía:
+# anotarlo acá evita que alguien vuelva a perder la tarde probándolas.
+
+version: 1
+
+cadenas:
+
+  dia:
+    nombre: Supermercados DIA
+    host: diaonline.supermercadosdia.com.ar
+    plataforma: vtex
+    id_comercio: "15"
+    sucursales_en_sepa: 975
+
+  vea:
+    nombre: Vea (Cencosud)
+    host: www.vea.com.ar
+    plataforma: vtex
+    id_comercio: "9"
+    sucursales_en_sepa: 268
+
+  jumbo:
+    nombre: Jumbo (Cencosud)
+    host: www.jumbo.com.ar
+    plataforma: vtex
+    # Cencosud aparece en SEPA por bandera: Vea es el 9. Falta identificar si
+    # Jumbo informa aparte o va adentro del mismo informante.
+    id_comercio: null
+
+  disco:
+    nombre: Disco (Cencosud)
+    host: www.disco.com.ar
+    plataforma: vtex
+    id_comercio: null
+
+sin_api:
+
+  coto:
+    nombre: COTO CICSA
+    id_comercio: "12"
+    # cotodigital3.com.ar redirige a coto.com.ar, y esa ruta devuelve el HTML de
+    # una aplicación de página única, no el catálogo. Haría falta otra forma.
+    motivo: no es VTEX, la tienda es una SPA
+
+  laanonima:
+    nombre: La Anonima
+    id_comercio: "2"
+    motivo: redirige a una página normal, no expone catálogo en esa ruta
+
+# --------------------------------------------------------------------------- #
+# Fuera de la gondola de supermercado: lo que SEPA NO cubre.
+#
+# Estos NO tienen contraparte en SEPA, asi que no se pueden cruzar: son fuente
+# primaria. Aca el objetivo no es comparar, es medir lo que no esta medido.
+#
+# Verificado a mano: los tres corren VTEX y responden con el mismo pedido que
+# las cadenas, asi que el codigo de `src/reporte/online.py` sirve tal cual.
+# --------------------------------------------------------------------------- #
+
+fuera_de_gondola:
+
+  farmacity:
+    nombre: Farmacity
+    host: www.farmacity.com
+    plataforma: vtex
+    trae_ean: true
+    coicop: ["06.1"]          # productos medicinales, 4,198% del IPC
+    # La canasta. Se fija aca y no se cambia: cambiarla rompe la muestra
+    # emparejada, porque los articulos que entran y salen no tienen con que
+    # compararse. Agregar un termino nuevo esta bien; sacar uno no.
+    terminos:
+      - ibuprofeno
+      - paracetamol
+      - amoxicilina
+      - omeprazol
+      - ibupirac
+      - aspirina
+      - alcohol en gel
+      - algodon
+      - curitas
+      - protector solar
+
+  fravega:
+    nombre: Fravega
+    host: www.fravega.com
+    plataforma: vtex
+    # OJO: no trae EAN. Para un indice no es fatal —se sigue el MISMO item mes a
+    # mes por su id, que es lo que hace el INDEC— pero no se puede cruzar contra
+    # ninguna otra fuente.
+    trae_ean: false
+    coicop: ["09.1", "05.3"]  # audiovisuales e informatica, artefactos del hogar
+    terminos:
+      - heladera
+      - lavarropas
+      - televisor
+      - notebook
+      - celular
+      - microondas
+      - aire acondicionado
+      - cafetera
+      - licuadora
+      - ventilador
+
+  easy:
+    nombre: Easy
+    host: www.easy.com.ar
+    plataforma: vtex
+    trae_ean: true
+    coicop: ["05.1", "05.5", "04.3"]  # muebles, herramientas, mantenimiento
+    terminos:
+      - pintura latex
+      - cemento
+      - taladro
+      - silla
+      - colchon
+      - canilla
+      - cable
+      - lampara led
+      - cerradura
+      - manguera
+
+# --------------------------------------------------------------------------- #
+# Bloqueados: necesitan credenciales, no mas codigo.
+# --------------------------------------------------------------------------- #
+
+bloqueados:
+
+  mercadolibre:
+    nombre: MercadoLibre
+    # La API publica devuelve {"message":"forbidden","status":403} en todos los
+    # endpoints, incluido /sites/MLA/search: hoy exige OAuth con una app
+    # registrada. Y la web publica redirige a /gz/account-verification, asi que
+    # el HTML vuelve sin un solo precio.
+    motivo: requiere OAuth con app registrada
+    que_hace_falta: >
+      una cuenta de MercadoLibre, crear una app de desarrollador y usar su
+      client_id y client_secret para pedir un token. Es gratis, pero es una
+      decision de alguien con cuenta: no es algo que se resuelva con codigo.
