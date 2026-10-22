@@ -19,6 +19,7 @@ from reporte.ponderadores import (
     calcular,
     cargar_mapeo,
     clase_coicop,
+    clase_del_indice,
     cobertura_por_clase,
     codigo_coicop,
     articulo_de_categoria,
@@ -51,6 +52,55 @@ def test_saca_la_clase_de_un_articulo():
 def test_un_codigo_invalido_rompe():
     with pytest.raises(ValueError, match="invalido"):
         codigo_coicop("XYZ")
+
+
+# --------------------------------------------------------------------------- #
+# La clase del indice: la hoja que pondera el INDEC
+# --------------------------------------------------------------------------- #
+
+
+@pytest.mark.parametrize("articulo, hoja", [
+    ("A0111101", "01.1.1"),   # facturas: el INDEC pondera la clase
+    ("A0611110", "06.1.1"),   # fiebre o dolor: tambien la clase
+    ("A0531108", "05.3"),     # heladera: el INDEC pondera el GRUPO 05.3
+    ("A0532103", "05.3"),     # licuadora: otra clase ENGHo, la misma hoja
+    ("A0511103", "05.1"),     # colchon
+    ("A0551105", "05.5"),     # taladro
+])
+def test_la_clase_del_indice_es_la_hoja_que_pondera_el_indec(articulo, hoja):
+    assert clase_del_indice(articulo) == hoja
+
+
+def test_un_articulo_que_no_cae_en_ninguna_hoja_corta():
+    with pytest.raises(ValueError, match="A9911101"):
+        clase_del_indice("A9911101")
+
+
+def test_en_alimentos_y_ropa_la_clase_del_indice_es_la_clase_coicop():
+    """Regresion: la clase del indice no mueve nada de lo que ya se mide.
+
+    Agosto->septiembre se calculo agrupando por `clase_coicop`; con la clase del
+    indice, las mismas categorias tienen que caer en la misma clase.
+    """
+    for cat, spec in cargar_mapeo().items():
+        art = spec["articulo"]
+        if art.startswith(("A01", "A03")):
+            assert clase_del_indice(art) == clase_coicop(art), cat
+
+
+def test_los_pesos_se_reparten_dentro_de_la_hoja_del_indec():
+    """Heladera y licuadora son dos clases de la ENGHo (A0531 y A0532) y una
+    sola hoja del INDEC (05.3). El peso de cada una es sobre la hoja: 300 y 100
+    de gasto dan 0,75 y 0,25. Repartido por clase ENGHo daria 1,0 y 1,0, y el
+    indice de 05.3 saldria con los dos articulos pesando lo mismo, sin error.
+    """
+    con = _con_sintetica([
+        (1, "A0531", "A0531108", 1.0, 300.0),
+        (1, "A0532", "A0532103", 1.0, 100.0),
+    ])
+    pesos = pesos_por_articulo(con, "GBA")
+    assert pesos["A0531108"][0] == pytest.approx(0.75)
+    assert pesos["A0532103"][0] == pytest.approx(0.25)
 
 
 # --------------------------------------------------------------------------- #
@@ -171,6 +221,18 @@ def test_un_articulo_sin_gasto_en_la_region_falla():
         calcular("GBA", con=con, mapeo={"x": {"articulo": "A9999999"}})
 
 
+def test_en_el_calculo_regional_sin_gasto_es_peso_cero():
+    """La ENGHo no registra gasto en rimel en Patagonia: ahi pesa cero.
+
+    Es una opcion explicita, para el calculo por region. Por defecto sigue
+    cortando, porque en el nacional un articulo sin gasto es un error de mapeo.
+    """
+    con = _con_sintetica([(6, "A0111", "A0111304", 1.0, 100.0)])
+    mapeo = {"fideos": {"articulo": "A0111304"}, "rimel": {"articulo": "A1213206"}}
+    pesos = calcular("Patagonia", con=con, mapeo=mapeo, omitir_sin_gasto=True)
+    assert [p.articulo for p in pesos] == ["A0111304"]
+
+
 # --------------------------------------------------------------------------- #
 # Cobertura
 # --------------------------------------------------------------------------- #
@@ -210,12 +272,44 @@ def test_un_articulo_compartido_no_cuenta_doble_en_la_cobertura():
 # --------------------------------------------------------------------------- #
 
 
+CLASES_SEPA = {
+    "01.1.1", "01.1.2", "01.1.3", "01.1.4", "01.1.5", "01.1.6", "01.1.7",
+    "01.1.8", "01.1.9", "01.2.1", "01.2.2",
+}
+# Ropa y calzado de las tiendas online: categorias `online.<prenda>_<genero>`.
+CLASES_ONLINE = {"03.1.2", "03.2.1"}
+# Lo online que no es ropa, por rubro, y los combustibles. Son clases DEL
+# INDICE: 05.1, 05.3 y 05.5 son grupos, porque el INDEC no abre esas clases.
+CLASES_RUBROS = {
+    "04.3.1", "05.1", "05.3", "05.5", "06.1.1", "06.1.2", "09.1.1", "09.1.3",
+    "09.3.4", "12.1.3",
+}
+CLASES_COMBUSTIBLES = {"07.2.2"}
+CLASES_TAXONOMIA = CLASES_SEPA | CLASES_ONLINE | CLASES_RUBROS | CLASES_COMBUSTIBLES
+
+
 def test_el_mapeo_del_repo_es_coherente_con_la_taxonomia():
-    """La clase que sale del codigo ENGHo tiene que ser una de las 6 del piloto."""
+    """La clase del indice de cada articulo tiene que ser una de las 24 de la taxonomia.
+
+    Eran 6 clases y 23 categorias hasta 10/2026; se sumaron carnes, pescados,
+    frutas, verduras y aguas/gaseosas/jugos (41 categorias, 15,79% del IPC),
+    despues ropa y calzado online (32 categorias), y el 21/10 el resto de lo
+    online (53 rubros) y los combustibles (5).
+    """
     mapeo = cargar_mapeo()
-    assert len(mapeo) == 23
-    clases = {clase_coicop(s["articulo"]) for s in mapeo.values()}
-    assert clases == {"01.1.1", "01.1.4", "01.1.5", "01.1.8", "01.1.9", "01.2.1"}
+    assert len(mapeo) == 154
+    clases = {clase_del_indice(s["articulo"]) for s in mapeo.values()}
+    assert clases == CLASES_TAXONOMIA
+
+    def clases_de(prefijo, cond=lambda a: True):
+        return {clase_del_indice(s["articulo"]) for c, s in mapeo.items()
+                if c.startswith(prefijo) and cond(s["articulo"])}
+
+    ropa = lambda a: a.startswith(("A031", "A032"))  # noqa: E731
+    assert clases_de("online.", ropa) == CLASES_ONLINE
+    assert clases_de("online.", lambda a: not ropa(a)) == CLASES_RUBROS
+    assert clases_de("combustibles.") == CLASES_COMBUSTIBLES
+    assert sum(1 for c in mapeo if c.startswith("online.")) == 32 + 53
 
 
 @pytest.mark.skipif(
@@ -232,9 +326,11 @@ def test_los_pesos_reales_cierran_y_son_plausibles():
     con = conectar()
     try:
         pesos = calcular("GBA", con=con)
-        # 23 categorias sobre 20 articulos: tres los comparten de a dos.
-        assert len(pesos) == 20
-        assert sum(len(p.categorias) for p in pesos) == 23
+        # 154 categorias sobre 149 articulos: cinco los comparten de a dos
+        # (harina 000/0000, yerba 500 g/1 kg, yogur firme/bebible, lechuga
+        # por kilo/por unidad, y malla/short de hombre).
+        assert len(pesos) == 149
+        assert sum(len(p.categorias) for p in pesos) == 154
         assert all(0.0 < p.peso_en_clase <= 1.0 for p in pesos)
 
         por_cat = {c: p for p in pesos for c in p.categorias}
@@ -245,12 +341,23 @@ def test_los_pesos_reales_cierran_y_son_plausibles():
         assert por_cat["almacen.sal_fina_500g"].peso_en_clase < 0.10
         assert (por_cat["lacteos.leche_entera_1l"].peso_en_clase
                 > por_cat["lacteos.leche_descremada_1l"].peso_en_clase)
+        # Las gaseosas son la mitad de su clase (52% en GBA); la carne picada
+        # pesa mas que las salchichas; la papa es la verdura mas pesada.
+        assert por_cat["bebidas.gaseosas"].peso_en_clase > 0.40
+        assert (por_cat["carnes.carne_picada_vacuna"].peso_en_clase
+                > por_cat["carnes.salchichas_viena"].peso_en_clase)
+        assert por_cat["verduras.papa"].peso_en_clase > 0.10
+        # Las dos lechugas comparten articulo: un solo peso, no dos.
+        assert por_cat["verduras.lechuga"] is por_cat["verduras.lechuga_unidad"]
 
         cob = cobertura_por_clase(pesos, con=con)
-        assert set(cob) == {"01.1.1", "01.1.4", "01.1.5", "01.1.8", "01.1.9", "01.2.1"}
+        assert set(cob) == CLASES_TAXONOMIA
         assert all(0.0 < c.cubierto <= 1.0 for c in cob.values())
-        # Aceites es la clase mejor cubierta y "Otros alimentos" la peor.
+        # Aceites es la clase mejor cubierta de las viejas y "Otros alimentos"
+        # una de las peores. Aguas y gaseosas, con cuatro categorias, cubren
+        # mas que cualquiera de las de almacen.
         assert cob["01.1.5"].cubierto > cob["01.1.9"].cubierto
+        assert cob["01.2.2"].cubierto > cob["01.1.9"].cubierto
     finally:
         con.close()
 

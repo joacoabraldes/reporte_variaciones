@@ -89,7 +89,7 @@ def clases_sin_ponderador(
     return sorted(c for c in clases_taxonomia if c not in pond)
 
 
-# =========================================================== CRITICO 7 de 8 ===
+# =========================================================== CRITICO 7 de 9 ===
 # QUE HACE     clases COICOP -> nivel del indice
 # FORMULA      suma( peso_renormalizado(clase) x indice(clase) ), sobre las
 #              clases que tienen indice Y peso > 0
@@ -156,7 +156,7 @@ class ClasesDesdeCategorias:
     categorias_por_clase: dict[str, int] = dataclasses.field(default_factory=dict)
 
 
-# =========================================================== CRITICO 5 de 8 ===
+# =========================================================== CRITICO 5 de 9 ===
 # QUE HACE     media ponderada de las categorias elementales dentro de cada
 #              clase COICOP. Es el escalon entre Jevons y Laspeyres.
 # FORMULA      indice(clase) = suma( peso(cat) x indice(cat) ) / suma( peso(cat) )
@@ -202,7 +202,65 @@ def clases_desde_categorias(
     )
 
 
-# =========================================================== CRITICO 8 de 8 ===
+# =========================================================== CRITICO 8 de 9 ===
+# QUE HACE     regiones -> nacional
+# FORMULA      nacional = suma( peso_region x nivel_region ), sobre NIVELES; la
+#              variacion del mes es el cociente de dos nacionales
+# POR QUE ASI  es la formula 15 del INDEC: pesa solo la region (cuadro 6),
+#              tambien para una division o una clase
+# LO VERIFICA  tests/test_nacional.py::test_reproduce_el_nacional_que_publica_el_indec
+# FALLA ASI    ponderar ademas por el peso de la division en cada region parece
+#              mas fino y erra 10 puntos de indice sobre 13.121; combinar
+#              variaciones en vez de niveles ignora que la region que acumulo
+#              mas inflacion pesa mas. Las dos dan numeros plausibles. La
+#              comparacion contra el INDEC tuvo el primero hasta el 21/10/2026.
+# ============================================================================
+def nacional_desde_regiones(
+    niveles: dict[str, float], pesos_region: dict[str, float]
+) -> float:
+    """El nivel nacional desde los regionales: formula 15 del INDEC.
+
+        nacional = suma( peso_region(r) x nivel(r) )
+
+    Con el peso de la REGION en el gasto del pais y nada mas, tambien para una
+    division o una clase: no se multiplica por el peso de la agregacion dentro
+    de cada region. Verificado contra el nacional publicado de agosto 2026.
+
+    Recibe NIVELES, no variaciones: la region que acumulo mas inflacion pesa mas
+    en la variacion del mes. Corta si falta una region o si los pesos no suman
+    1, en vez de devolver el promedio de lo que haya.
+    """
+    sin_nivel = sorted(set(pesos_region) - set(niveles))
+    sin_peso = sorted(set(niveles) - set(pesos_region))
+    if sin_nivel or sin_peso:
+        raise ValueError(
+            f"regiones sin nivel: {sin_nivel or '-'}; regiones sin peso: {sin_peso or '-'}"
+        )
+    total = sum(pesos_region.values())
+    if abs(total - 1.0) > 1e-6:
+        raise ValueError(f"los pesos regionales suman {total:.6f}, no 1")
+    return sum(pesos_region[r] * niveles[r] for r in pesos_region)
+
+
+def variacion_nacional(
+    variaciones: dict[str, float],
+    niveles_base: dict[str, float],
+    pesos_region: dict[str, float],
+) -> float:
+    """El indice nacional del mes (1,0230 = +2,30%) desde las variaciones regionales.
+
+    Cada region parte de su nivel y se mueve por su variacion; el nacional es
+    el cociente de los dos nacionales, asi que la region que acumulo mas
+    inflacion pesa mas en el mes.
+    """
+    antes = nacional_desde_regiones(niveles_base, pesos_region)
+    despues = nacional_desde_regiones(
+        {r: niveles_base[r] * variaciones[r] for r in niveles_base}, pesos_region
+    )
+    return despues / antes
+
+
+# =========================================================== CRITICO 9 de 9 ===
 # QUE HACE     el nivel del indice mes a mes
 # FORMULA      indice_t = indice_{t-1} x variacion_t
 # POR QUE ASI  multiplicativo y nunca contra la base directa: la canasta rota, y

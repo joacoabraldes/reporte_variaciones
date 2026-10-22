@@ -163,3 +163,565 @@ categorias:
   almacen.snacks:
     articulo: A0119210
     descripcion: Chizitos, papas fritas, palitos  # 17,68% de 01.1.9
+
+  # =========================================== frescos y bebidas, 10/2026 --
+  # Las clases 01.1.2, 01.1.3, 01.1.6, 01.1.7 y 01.2.2. Descripcion y peso
+  # salen de los microdatos de la ENGHo 2017/18; el % es dentro de la clase
+  # y NACIONAL (las seis regiones), no GBA como los de arriba.
+  #
+  # El pollo entero (A0112201, 7,72% de 01.1.2) no tiene categoria: no esta
+  # en SEPA con EAN. Su peso se reparte al renormalizar dentro de la clase.
+
+  # ------------------------------------------------------------ carnes --
+
+  carnes.carne_picada_vacuna:
+    articulo: A0112108
+    descripcion: Carne picada                       # 9,81% de 01.1.2
+
+  carnes.asado:
+    articulo: A0112102
+    descripcion: Asado                              # 8,42% de 01.1.2
+
+  carnes.pollo_trozado:
+    articulo: A0112202
+    descripcion: Pollo trozado                      # 8,38% de 01.1.2
+
+  carnes.supremas_pollo_rebozadas:
+    articulo: A0112206
+    descripcion: Supremas de pollo rebozadas        # 7,44% de 01.1.2
+
+  carnes.preparados_pollo:
+    articulo: A0112207
+    descripcion: "Preparados de pollo: Formitas, patitas, etc."  # 0,51% de 01.1.2
+
+  carnes.nalga:
+    articulo: A0112116
+    descripcion: Nalga                              # 5,30% de 01.1.2
+
+  carnes.milanesas_vacunas:
+    articulo: A0112129
+    descripcion: Milanesas para cocinar (semipreparados) # 4,00% de 01.1.2
+
+  carnes.bife_angosto:
+    articulo: A0112104
+    descripcion: Bife angosto                       # 3,12% de 01.1.2
+
+  carnes.bife_de_chorizo:
+    articulo: A0112105
+    descripcion: Bife de chorizo                    # 0,55% de 01.1.2
+
+  carnes.cuadril:
+    articulo: A0112110
+    descripcion: Cuadril                            # 2,96% de 01.1.2
+
+  carnes.bola_de_lomo:
+    articulo: A0112106
+    descripcion: bola de lomo                       # 2,95% de 01.1.2
+
+  carnes.paleta_vacuna:
+    articulo: A0112117
+    descripcion: Paleta                             # 2,68% de 01.1.2
+
+  carnes.bife_ancho:
+    articulo: A0112103
+    descripcion: Bife ancho                         # 2,26% de 01.1.2
+
+  carnes.vacio:
+    articulo: A0112121
+    descripcion: Vacío                              # 2,06% de 01.1.2
+
+  carnes.chorizo_fresco:
+    articulo: A0112501
+    descripcion: Chorizo fresco                     # 2,05% de 01.1.2
+
+  carnes.jamon_cocido:
+    articulo: A0112508
+    descripcion: Jamón cocido                       # 1,83% de 01.1.2
+
+  carnes.salchichas_viena:
+    articulo: A0112504
+    descripcion: Salchicha tipo viena con y sin piel # 1,43% de 01.1.2
+
+  # ---------------------------------------------------------- pescados --
+
+  pescados.merluza:
+    articulo: A0113103
+    descripcion: Merluza                            # 34,31% de 01.1.3
+
+  pescados.atun_conserva:
+    articulo: A0113201
+    descripcion: Atún en conserva                   # 28,09% de 01.1.3
+
+  pescados.rebozados:
+    articulo: A0113113
+    descripcion: Semipreparados congelados en base a pescado y mariscos # 5,78% de 01.1.3
+
+  # ------------------------------------------------------------ frutas --
+
+  frutas.banana:
+    articulo: A0116102
+    descripcion: Banana                             # 23,06% de 01.1.6
+
+  frutas.manzana:
+    articulo: A0116111
+    descripcion: Manzana                            # 16,74% de 01.1.6
+
+  frutas.naranja:
+    articulo: A0116113
+    descripcion: Naranja                            # 11,43% de 01.1.6
+
+  frutas.mandarina:
+    articulo: A0116110
+    descripcion: Mandarina                          # 6,39% de 01.1.6
+
+  frutas.limon:
+    articulo: A0116109
+    descripcion: Limón                              # 4,12% de 01.1.6
+
+  frutas.pera:
+    articulo: A0116116
+    descripcion: Pera                               # 3,91% de 01.1.6
+
+  # ---------------------------------------------------------- verduras --
+
+  verduras.papa:
+    articulo: A0117119
+    descripcion: Papa fresca                        # 17,87% de 01.1.7
+
+  verduras.tomate_redondo:
+    articulo: A0117126
+    descripcion: Tomate redondo fresco              # 8,73% de 01.1.7
+
+  verduras.tomate_perita:
+    articulo: A0117125
+    descripcion: Tomate perita fresco               # 6,48% de 01.1.7
+
+  verduras.tomate_conserva:
+    articulo: A0117310
+    descripcion: Tomates en conserva                # 7,66% de 01.1.7
+
+  verduras.cebolla:
+    articulo: A0117110
+    descripcion: Cebolla común fresca               # 8,43% de 01.1.7
+
+  verduras.lechuga:
+    articulo: A0117117
+    descripcion: Lechuga fresca                     # 6,00% de 01.1.7
+    comparte_con: [verduras.lechuga_unidad]
+
+  verduras.lechuga_unidad:
+    articulo: A0117117
+    descripcion: Lechuga fresca                     # 6,00% de 01.1.7
+    comparte_con: [verduras.lechuga]
+
+  verduras.zanahoria:
+    articulo: A0117129
+    descripcion: Zanahoria fresca                   # 4,40% de 01.1.7
+
+  verduras.zapallo:
+    articulo: A0117131
+    descripcion: Zapallo fresco                     # 4,29% de 01.1.7
+
+  verduras.morron:
+    articulo: A0117102
+    descripcion: Ají fresco                         # 4,42% de 01.1.7
+
+  verduras.zapallito:
+    articulo: A0117130
+    descripcion: Zapallitos frescos                 # 2,23% de 01.1.7
+
+  # ------------------------------------------- aguas, gaseosas y jugos --
+
+  bebidas.gaseosas:
+    articulo: A0122201
+    descripcion: Gaseosas                           # 56,49% de 01.2.2
+
+  bebidas.agua_mineral:
+    articulo: A0122101
+    descripcion: Agua mineral                       # 12,76% de 01.2.2
+
+  bebidas.aguas_saborizadas:
+    articulo: A0122306
+    descripcion: Aguas saborizadas frutales         # 6,77% de 01.2.2
+
+  bebidas.jugo_en_polvo:
+    articulo: A0122302
+    descripcion: Jugos y refrescos en polvo para preparar bebidas # 8,83% de 01.2.2
+
+  # ================================================= online, 10/2026 --
+  # Ropa y calzado de las tiendas online. La categoria sale de la
+  # clasificacion que publica captura (staged/clasificacion_online/):
+  # prenda x genero, porque la ENGHo separa cada prenda por hombre y mujer.
+  # El % es dentro de la clase, nacional.
+
+  online.zapatillas_hombre:
+    articulo: A0321107
+    descripcion: "Zapatillas para hombres"  # 30,17% de 03.2.1
+
+  online.zapatillas_mujer:
+    articulo: A0321207
+    descripcion: "Zapatillas para mujeres"  # 18,06% de 03.2.1
+
+  online.botas_hombre:
+    articulo: A0321104
+    descripcion: "Botas, botines para hombres"  # 1,59% de 03.2.1
+
+  online.botas_mujer:
+    articulo: A0321204
+    descripcion: "Botas, botitas para mujeres"  # 4,27% de 03.2.1
+
+  online.sandalias_hombre:
+    articulo: A0321105
+    descripcion: "Sandalias, ojotas, chinelas para hombres"  # 1,60% de 03.2.1
+
+  online.sandalias_mujer:
+    articulo: A0321202
+    descripcion: "Sandalias, zuecos para mujeres"  # 6,08% de 03.2.1
+
+  online.zapatos_hombre:
+    articulo: A0321101
+    descripcion: "Zapatos acordonados para hombres"  # 4,50% de 03.2.1
+
+  online.zapatos_mujer:
+    articulo: A0321201
+    descripcion: "Zapatos de vestir para mujeres"  # 6,19% de 03.2.1
+
+  online.jean_hombre:
+    articulo: A0312103
+    descripcion: "Pantalón de jean para hombres"  # 7,96% de 03.1.2
+
+  online.jean_mujer:
+    articulo: A0312203
+    descripcion: "Pantalón de jean para mujeres"  # 6,67% de 03.1.2
+
+  online.vestido_mujer:
+    articulo: A0312206
+    descripcion: "Vestido, jumper, conjunto de blusa y pollera para mujeres"  # 2,87% de 03.1.2
+
+  online.pollera_mujer:
+    articulo: A0312205
+    descripcion: "Pollera, pollera-pantalón para mujeres"  # 0,68% de 03.1.2
+
+  online.calza_mujer:
+    articulo: A0312218
+    descripcion: "Calzas, leggins (algodón, lycra, etc.) excluye deportivas."  # 1,72% de 03.1.2
+
+  online.malla_hombre:
+    articulo: A0312108
+    descripcion: "Short, bermuda, traje de baño, malla para hombre"  # 1,95% de 03.1.2
+    comparte_con: [online.short_hombre]
+
+  online.malla_mujer:
+    articulo: A0312211
+    descripcion: "Traje de baño, malla para mujeres"  # 1,10% de 03.1.2
+
+  online.traje_hombre:
+    articulo: A0312110
+    descripcion: "Traje, ambo para hombres"  # 1,52% de 03.1.2
+
+  online.short_hombre:
+    articulo: A0312108
+    descripcion: "Short, bermuda, traje de baño, malla para hombre"  # 1,95% de 03.1.2
+    comparte_con: [online.malla_hombre]
+
+  online.short_mujer:
+    articulo: A0312210
+    descripcion: "Short, bermuda para mujeres"  # 0,70% de 03.1.2
+
+  online.campera_hombre:
+    articulo: A0312111
+    descripcion: "Campera, anorak para hombres"  # 4,48% de 03.1.2
+
+  online.campera_mujer:
+    articulo: A0312214
+    descripcion: "Campera, anorak para mujeres"  # 3,77% de 03.1.2
+
+  online.buzo_hombre:
+    articulo: A0312105
+    descripcion: "Pulover, chaleco, para hombres"  # 1,32% de 03.1.2
+
+  online.buzo_mujer:
+    articulo: A0312207
+    descripcion: "Pullover, chaleco, polerón para mujeres"  # 2,02% de 03.1.2
+
+  online.blazer_hombre:
+    articulo: A0312109
+    descripcion: "Saco sport, blazer para hombres"  # 0,57% de 03.1.2
+
+  online.blazer_mujer:
+    articulo: A0312212
+    descripcion: "Blazer, saco para mujeres"  # 0,64% de 03.1.2
+
+  online.camisa_hombre:
+    articulo: A0312101
+    descripcion: "Camisa para hombres"  # 5,47% de 03.1.2
+
+  online.camisa_mujer:
+    articulo: A0312201
+    descripcion: "Blusa, camisa para mujeres"  # 3,88% de 03.1.2
+
+  online.remera_hombre:
+    articulo: A0312102
+    descripcion: "Remera, chomba, polera para hombres"  # 6,98% de 03.1.2
+
+  online.remera_mujer:
+    articulo: A0312202
+    descripcion: "Remera, polera, para mujeres"  # 5,68% de 03.1.2
+
+  online.pantalon_hombre:
+    articulo: A0312104
+    descripcion: "Pantalón de vestir para hombres"  # 2,01% de 03.1.2
+
+  online.pantalon_mujer:
+    articulo: A0312204
+    descripcion: "Pantalón de vestir para mujeres"  # 1,48% de 03.1.2
+
+  online.medias_hombre:
+    articulo: A0312403
+    descripcion: "Medias, zoquetes para hombres"  # 0,67% de 03.1.2
+
+  online.medias_mujer:
+    articulo: A0312506
+    descripcion: "Medias, zoquetes para mujeres"  # 0,36% de 03.1.2
+
+  # --- Lo online que no es ropa (21/10/2026) ---------------------------------
+  # Generado desde `rubros` de config/categorias_online.yaml del repo de captura:
+  # el articulo de cada categoria es el mismo de los dos lados, y el reporte
+  # corta si la tabla publicada no coincide. El % es el peso nacional del
+  # articulo en su CLASE DEL INDICE (05.3 y no 05.3.1: ver clase_del_indice).
+
+  online.medicamento_cardiaco:
+    articulo: A0611105
+    descripcion: "Cardíacos"  # 5,12% de 06.1.1
+
+  online.medicamento_antibiotico:
+    articulo: A0611102
+    descripcion: "Antibióticos y antisépticos"  # 7,40% de 06.1.1
+
+  online.medicamento_digestivo:
+    articulo: A0611109
+    descripcion: "Digestivos"  # 5,59% de 06.1.1
+
+  online.medicamento_dolor:
+    articulo: A0611110
+    descripcion: "Fiebre o dolor"  # 11,79% de 06.1.1
+
+  online.alcohol:
+    articulo: A0612101
+    descripcion: "Alcohol, agua oxigenada, antisépticos, desinfectantes"  # 22,66% de 06.1.2
+
+  online.algodon:
+    articulo: A0612102
+    descripcion: "Algodón"  # 23,81% de 06.1.2
+
+  online.curitas:
+    articulo: A0612106
+    descripcion: "Tela adhesiva, curitas"  # 7,18% de 06.1.2
+
+  online.vendas:
+    articulo: A0612103
+    descripcion: "Gasas y vendas"  # 11,22% de 06.1.2
+
+  online.crema:
+    articulo: A1213204
+    descripcion: "Crema de belleza, de manos, de limpieza, nutritiva, demaquilladora, para el cuerpo, bronceadores, etc."  # 3,86% de 12.1.3
+
+  online.panales:
+    articulo: A1213104
+    descripcion: "Pañales descartables para bebés"  # 14,93% de 12.1.3
+
+  online.desodorante:
+    articulo: A1213208
+    descripcion: "Desodorante"  # 6,96% de 12.1.3
+
+  online.perfume:
+    articulo: A1213201
+    descripcion: "Colonia, loción, perfume"  # 2,80% de 12.1.3
+
+  online.dentifrico:
+    articulo: A1213207
+    descripcion: "Dentífrico"  # 6,52% de 12.1.3
+
+  online.cepillo_dental:
+    articulo: A1213101
+    descripcion: "Cepillos dentales, hilo dental, palillos interdentales"  # 1,43% de 12.1.3
+
+  online.champu:
+    articulo: A1213205
+    descripcion: "Champú, crema de enjuague, acondicionador"  # 21,83% de 12.1.3
+
+  online.jabon:
+    articulo: A1213211
+    descripcion: "Jabón de tocador"  # 8,01% de 12.1.3
+
+  online.labial:
+    articulo: A1213212
+    descripcion: "Lápiz labial"  # 0,25% de 12.1.3
+
+  online.esmalte:
+    articulo: A1213209
+    descripcion: "Esmalte y quitaesmalte"  # 0,50% de 12.1.3
+
+  online.ojos:
+    articulo: A1213206
+    descripcion: "Delineador, rímel, sombra"  # 0,17% de 12.1.3
+
+  online.cosmeticos:
+    articulo: A1213202
+    descripcion: "Cosméticos: base, rubor, etc."  # 0,33% de 12.1.3
+
+  online.heladera:
+    articulo: A0531108
+    descripcion: "Heladera con freezer"  # 20,58% de 05.3
+
+  online.lavarropas:
+    articulo: A0531301
+    descripcion: "Lavarropa y lavasecarropa"  # 18,68% de 05.3
+
+  online.aire_acondicionado:
+    articulo: A0531201
+    descripcion: "Aire acondicionado"  # 15,96% de 05.3
+
+  online.microondas:
+    articulo: A0531105
+    descripcion: "Microondas"  # 1,76% de 05.3
+
+  online.calefactor_electrico:
+    articulo: A0531207
+    descripcion: "Estufa, calefactor eléctrico"  # 1,52% de 05.3
+
+  online.licuadora:
+    articulo: A0532103
+    descripcion: "Licuadora, batidora, procesadora, juguera, molinillo p/café, exprimidor, tostadora, freidora, panquequera y helador"  # 3,00% de 05.3
+
+  online.cafetera:
+    articulo: A0532102
+    descripcion: "Cafetera, pava, tetera eléctrica"  # 1,42% de 05.3
+
+  online.ventilador:
+    articulo: A0532105
+    descripcion: "Ventilador de mesa o de pie, turbo circulador"  # 2,23% de 05.3
+
+  online.televisor:
+    articulo: A0911102
+    descripcion: "Televisor"  # 85,68% de 09.1.1
+
+  online.equipo_de_audio:
+    articulo: A0911202
+    descripcion: "Equipo musical, minicomponente, microcomponente, etc."  # 8,00% de 09.1.1
+
+  online.notebook:
+    articulo: A0913102
+    descripcion: "Computadora personal: notebook, netbook"  # 57,75% de 09.1.3
+
+  online.computadora:
+    articulo: A0913101
+    descripcion: "Computadora de escritorio, CPU"  # 18,08% de 09.1.3
+
+  online.amoblamiento_cocina:
+    articulo: A0511301
+    descripcion: "Amoblamiento para cocina (alacenas, placares, etc.)"  # 6,66% de 05.1
+
+  online.colchon:
+    articulo: A0511103
+    descripcion: "Colchón o somieres"  # 28,20% de 05.1
+
+  online.muebles_jardin:
+    articulo: A0511303
+    descripcion: "Muebles de jardín de metal, plástico"  # 1,75% de 05.1
+
+  online.sillas:
+    articulo: A0511204
+    descripcion: "Sillas, banquetas, bancos"  # 5,39% de 05.1
+
+  online.lampara:
+    articulo: A0511401
+    descripcion: "Artefactos para iluminación (lámparas, veladores, etc.)"  # 3,47% de 05.1
+
+  online.pintura:
+    articulo: A0431113
+    descripcion: "Pintura y accesorios"  # 17,81% de 04.3.1
+
+  online.cemento:
+    articulo: A0431102
+    descripcion: "Cal, cemento"  # 7,86% de 04.3.1
+
+  online.ladrillo:
+    articulo: A0431103
+    descripcion: "Ladrillo"  # 6,04% de 04.3.1
+
+  online.griferia:
+    articulo: A0431107
+    descripcion: "Grifería: canillas, duchas"  # 1,93% de 04.3.1
+
+  online.canerias:
+    articulo: A0431106
+    descripcion: "Cañerías y sus accesorios"  # 3,07% de 04.3.1
+
+  online.herramientas_de_mano:
+    articulo: A0552102
+    descripcion: "Herramientas de mano"  # 2,99% de 05.5
+
+  online.taladro:
+    articulo: A0551105
+    descripcion: "Taladro, sierra, pulidora"  # 6,96% de 05.5
+
+  online.herramienta_electrica:
+    articulo: A0551106
+    descripcion: "Otras herramientas eléctricas y mecánicas"  # 10,33% de 05.5
+
+  online.lamparita:
+    articulo: A0552204
+    descripcion: "Lámpara incandescente, lámpara bajo consumo, tubo fluorescente, halógenas, dicroicas, etc."  # 26,69% de 05.5
+
+  online.cables:
+    articulo: A0552202
+    descripcion: "Cables"  # 5,79% de 05.5
+
+  online.enchufes:
+    articulo: A0552203
+    descripcion: "Enchufes e interruptores"  # 4,02% de 05.5
+
+  online.materiales_electricos:
+    articulo: A0552208
+    descripcion: "Otros materiales eléctricos y de iluminación"  # 7,29% de 05.5
+
+  online.ferreteria:
+    articulo: A0552104
+    descripcion: "Artículos de ferretería"  # 2,24% de 05.5
+
+  online.jardineria:
+    articulo: A0552103
+    descripcion: "Herramientas y accesorios para jardinería"  # 0,67% de 05.5
+
+  online.alimento_mascota:
+    articulo: A0934102
+    descripcion: "Alimento para mascota"  # 92,08% de 09.3.4
+
+  online.articulos_mascota:
+    articulo: A0934103
+    descripcion: "Artículos relativos a mascotas"  # 5,39% de 09.3.4
+
+  # --- Combustibles: dataset de precios en surtidor de Energia ---------------
+  # La categoria sale del `idproducto` del dataset (online_indice.PRODUCTOS_SURTIDOR).
+
+  combustibles.nafta_super:
+    articulo: A0722102
+    descripcion: "Nafta súper"  # 65,09% de 07.2.2
+
+  combustibles.nafta_premium:
+    articulo: A0722103
+    descripcion: "Nafta premium"  # 15,16% de 07.2.2
+
+  combustibles.gasoil:
+    articulo: A0722201
+    descripcion: "Diesel, gasoil"  # 11,37% de 07.2.2
+
+  combustibles.gasoil_premium:
+    articulo: A0722202
+    descripcion: "Diesel premium"  # 2,77% de 07.2.2
+
+  combustibles.gnc:
+    articulo: A0722301
+    descripcion: "Gas natural comprimido, GNC"  # 5,35% de 07.2.2
+

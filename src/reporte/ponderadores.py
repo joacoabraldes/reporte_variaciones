@@ -43,6 +43,7 @@ omision silenciosa: `PesoCategoria.actualizado` lo deja marcado.
 from __future__ import annotations
 
 import dataclasses
+import functools
 import zipfile
 from pathlib import Path
 
@@ -167,6 +168,48 @@ def clase_coicop(articulo_engho: str) -> str:
     return ".".join(codigo_coicop(articulo_engho).split(".")[:3])
 
 
+def hojas_del_indec(path: Path | None = None) -> frozenset[str]:
+    """Los codigos que el INDEC pondera y no abre: las hojas de ponderadores.yaml."""
+    return _hojas(str(path or PATH_PONDERADORES))
+
+
+@functools.lru_cache(maxsize=None)
+def _hojas(path: str) -> frozenset[str]:
+    # Se lee una vez por archivo: `clase_del_indice` se llama por cada articulo,
+    # y parsear el YAML cada vez llevo los tests de 8 a 87 segundos.
+    datos = yaml.safe_load(Path(path).read_text(encoding="utf-8"))
+    codigos = {str(c) for c in (datos.get("ponderaciones") or {})} - {"0"}
+    return frozenset(
+        c for c in codigos if not any(o.startswith(c + ".") for o in codigos)
+    )
+
+
+def _hoja(articulo_engho: str, hojas: frozenset[str]) -> str | None:
+    partes = codigo_coicop(articulo_engho).split(".")
+    for n in range(len(partes), 0, -1):
+        if ".".join(partes[:n]) in hojas:
+            return ".".join(partes[:n])
+    return None
+
+
+def clase_del_indice(articulo_engho: str, hojas: frozenset[str] | None = None) -> str:
+    """La hoja que pondera el INDEC para un articulo: la clase del indice.
+
+    Casi siempre es la clase COICOP (`A0111101` -> `01.1.1`), pero en muebles,
+    artefactos y herramientas el INDEC publica el peso del GRUPO y no abre las
+    clases: una heladera (`A0531108`, clase 05.3.1) y una licuadora (`A0532103`,
+    clase 05.3.2) caen las dos en `05.3`. Agregar por `clase_coicop` ahi deja
+    clases sin ponderador.
+    """
+    hoja = _hoja(articulo_engho, hojas or hojas_del_indec())
+    if hoja is None:
+        raise ValueError(
+            f"el articulo {articulo_engho} no cae en ninguna hoja de "
+            f"config/ponderadores.yaml"
+        )
+    return hoja
+
+
 def cargar_mapeo(path: Path | None = None) -> dict[str, dict]:
     """`categoria -> {articulo, descripcion, comparte_con}`."""
     path = path or PATH_MAPEO
@@ -218,10 +261,12 @@ def conectar(
 def pesos_por_articulo(
     con: duckdb.DuckDBPyConnection, region: str
 ) -> dict[str, tuple[float, float]]:
-    """`articulo -> (peso dentro de su clase, gasto expandido)` para una region.
+    """`articulo -> (peso dentro de su clase del indice, gasto expandido)`.
 
-    El denominador es la clase y no el total: lo que hace falta es repartir el
-    peso que el INDEC ya publica a nivel clase entre las categorias de adentro.
+    El denominador es la clase del indice y no el total: lo que hace falta es
+    repartir el peso que el INDEC publica para esa hoja entre los articulos de
+    adentro. Es la clase de la ENGHo salvo en 05.1, 05.3 y 05.5, donde el INDEC
+    pondera el grupo (ver `clase_del_indice`).
     """
     if region == REGION_NACIONAL:
         filtro, params = "TRUE", []
@@ -235,33 +280,38 @@ def pesos_por_articulo(
         filtro, params = "region = ?", [cod, cod]
 
     filas = con.execute(
-        f"""
-        WITH tot AS (
-            SELECT clase, sum(pondera * monto) AS s
-            FROM gastos WHERE {filtro} GROUP BY clase
-        )
-        SELECT g.articulo,
-               sum(g.pondera * g.monto) / any_value(tot.s),
-               sum(g.pondera * g.monto)
-        FROM gastos g JOIN tot ON tot.clase = g.clase
-        WHERE g.{filtro}
-        GROUP BY g.articulo
-        """.replace("g.TRUE", "TRUE"),
-        params,
+        f"SELECT articulo, sum(pondera * monto) FROM gastos WHERE {filtro} "
+        "GROUP BY articulo",
+        params[:1],
     ).fetchall()
-    return {a: (float(p), float(gasto)) for a, p, gasto in filas}
+    hojas = hojas_del_indec()
+    hoja = {a: _hoja(a, hojas) for a, _ in filas}
+    total: dict[str, float] = {}
+    for a, gasto in filas:
+        if hoja[a] is not None:
+            total[hoja[a]] = total.get(hoja[a], 0.0) + float(gasto)
+    return {
+        a: (float(gasto) / total[hoja[a]], float(gasto))
+        for a, gasto in filas
+        if hoja[a] is not None and total[hoja[a]] > 0
+    }
 
 
 def calcular(
     region: str = "GBA",
     con: duckdb.DuckDBPyConnection | None = None,
     mapeo: dict[str, dict] | None = None,
+    omitir_sin_gasto: bool = False,
 ) -> list[PesoArticulo]:
     """Peso de cada articulo de la ENGHo que el indice mide, dentro de su clase.
 
     Devuelve una fila por ARTICULO, con la lista de categorias nuestras que caen
     en el. Las categorias que comparten articulo no se separan: ver
     `PesoArticulo`.
+
+    Un articulo sin gasto en la region corta, salvo con `omitir_sin_gasto`: en
+    el calculo por region es un dato (la ENGHo no registra gasto en rimel en
+    Patagonia, y ahi pesa cero), no un error de mapeo.
     """
     propio = con is None
     con = con or conectar()
@@ -278,6 +328,8 @@ def calcular(
 
         salida: list[PesoArticulo] = []
         for art, cats in sorted(agrupado.items()):
+            if art not in pesos and omitir_sin_gasto:
+                continue
             if art not in pesos:
                 raise ValueError(
                     f"el articulo {art!r} (categorias {', '.join(cats)}) no tiene "
@@ -286,7 +338,7 @@ def calcular(
             peso, gasto = pesos[art]
             salida.append(
                 PesoArticulo(
-                    articulo=art, descripcion=desc[art], clase=clase_coicop(art),
+                    articulo=art, descripcion=desc[art], clase=clase_del_indice(art),
                     region=region, peso_en_clase=peso, gasto=gasto,
                     categorias=tuple(cats),
                 )
@@ -317,24 +369,26 @@ def cobertura_por_clase(
     try:
         region = pesos[0].region if pesos else "GBA"
         if region == REGION_NACIONAL:
-            n_por_clase = dict(con.execute(
-                "SELECT clase, count(DISTINCT articulo) FROM gastos GROUP BY clase"
-            ).fetchall())
+            articulos = con.execute("SELECT DISTINCT articulo FROM gastos").fetchall()
         else:
-            n_por_clase = dict(con.execute(
-                "SELECT clase, count(DISTINCT articulo) FROM gastos "
-                "WHERE region = ? GROUP BY clase",
+            articulos = con.execute(
+                "SELECT DISTINCT articulo FROM gastos WHERE region = ?",
                 [REGION_POR_NOMBRE[region]],
-            ).fetchall())
+            ).fetchall()
+        hojas = hojas_del_indec()
+        n_por_clase: dict[str, int] = {}
+        for (a,) in articulos:
+            h = _hoja(a, hojas)
+            if h is not None:
+                n_por_clase[h] = n_por_clase.get(h, 0) + 1
         acum: dict[str, CoberturaClase] = {}
         for p in pesos:
             c = acum.get(p.clase)
             if c is None:
-                clase_engho = "A" + p.clase.replace(".", "")
                 c = CoberturaClase(
                     clase=p.clase, region=region, cubierto=0.0,
                     n_articulos=0, n_categorias=0,
-                    n_articulos_clase=int(n_por_clase.get(clase_engho, 0)),
+                    n_articulos_clase=n_por_clase.get(p.clase, 0),
                 )
                 acum[p.clase] = c
             c.cubierto += p.peso_en_clase
@@ -457,25 +511,34 @@ def factores_actualizacion(
     ese es el modo de falla que importa, porque una clase sin factor se queda con
     su peso viejo mientras las demas se actualizan, y el numero sigue pareciendo
     razonable.
+
+    `apertura` puede ser un nombre o una LISTA de nombres exactos, porque el
+    INDEC no escribe igual la misma serie en todas las regiones ("etc," en GBA,
+    "etc." en las otras cinco). Se toma el primero que exista. Son nombres
+    explicitos y versionados, no un parecido aproximado: matchear por similitud
+    es justo lo que puede agarrar la serie equivocada sin avisar.
     """
     cfg = yaml.safe_load((path_mapeo or PATH_INDICES).read_text(encoding="utf-8"))
     series = _indices_publicados(region, xls)
 
     factores: dict[str, float] = {}
     for clase, spec in (cfg.get("clases") or {}).items():
-        apertura = spec.get("apertura")
-        if apertura not in series:
+        declarada = spec.get("apertura")
+        nombres = declarada if isinstance(declarada, list) else [declarada]
+        apertura = next((n for n in nombres if n in series), None)
+        if apertura is None:
             raise ValueError(
-                f"la clase {clase} declara la apertura {apertura!r}, que no esta "
-                f"en la planilla de indices. Revisar config/indices_ipc.yaml: los "
-                f"nombres de la planilla cambian entre publicaciones."
+                f"la clase {clase} declara la apertura {declarada!r}, que no esta "
+                f"en la planilla de indices de {region}. Revisar "
+                f"config/indices_ipc.yaml: los nombres de la planilla cambian "
+                f"entre publicaciones y entre regiones."
             )
         serie = series[apertura]
         factores[str(clase)] = float(serie[mes if mes is not None else -1]) / 100.0
     return factores
 
 
-# =========================================================== CRITICO 6 de 8 ===
+# =========================================================== CRITICO 6 de 9 ===
 # QUE HACE     lleva los ponderadores de clase a la base de precios del indice
 # FORMULA      peso'(c) = peso(c) x factor(c) / suma( peso(j) x factor(j) )
 # POR QUE ASI  Laspeyres pide que los pesos esten a precios de la base. Los de
@@ -486,7 +549,9 @@ def factores_actualizacion(
 # FALLA ASI    una clase sin factor queda AFUERA del resultado. Si eso pasa sin
 #              que nadie lo vea, el indice sale sobre menos canasta: por eso
 #              `factores_actualizacion` corta con excepcion cuando una clase
-#              declarada no esta en la planilla, y por eso el reporte corta si
+#              declarada no esta en la planilla con NINGUNO de sus nombres
+#              (puede declarar varios exactos, porque el INDEC escribe distinto
+#              la misma serie segun la region), y por eso el reporte corta si
 #              una clase de la taxonomia no tiene ponderador.
 # ============================================================================
 def actualizar_por_precios(
@@ -515,3 +580,22 @@ def actualizar_por_precios(
         c: (nombre, peso * factores[c] / total)
         for c, (nombre, peso) in comunes.items()
     }
+
+
+def nivel_de_la_canasta(
+    pond: dict[str, tuple[str, float]], factores: dict[str, float], clases: set[str]
+) -> float:
+    """Nivel del INDEC de la parte de la canasta que medimos, en una region.
+
+        nivel = suma( peso(c) x factor(c) ) / suma( peso(c) ),  c en `clases`
+
+    con los pesos base de la region (diciembre 2016) y los factores de
+    `factores_actualizacion` de esa misma region. Es el nivel del que parte cada
+    region al armar el nacional (`agregacion.variacion_nacional`): la que acumulo
+    mas inflacion pesa mas en el mes.
+    """
+    sin_factor = sorted(c for c in clases if c not in factores)
+    if sin_factor:
+        raise ValueError(f"sin factor de actualizacion: {', '.join(sin_factor)}")
+    total = sum(pond[c][1] for c in clases)
+    return sum(pond[c][1] * factores[c] for c in clases) / total

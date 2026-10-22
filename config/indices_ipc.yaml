@@ -30,9 +30,16 @@
 #
 # EL FALLBACK
 # El INDEC publica 49 aperturas, y no todas las clases tienen la suya. De las
-# seis del piloto, cinco tienen indice propio y "Otros alimentos" (01.1.9) no.
-# Para esas se usa el indice del nivel inmediato superior que si este publicado
-# —su grupo, o su division— y queda anotado en `usa_nivel_superior`.
+# once de la taxonomia, nueve tienen indice propio; "Pescados y mariscos"
+# (01.1.3) y "Otros alimentos" (01.1.9) no. Para esas se usa el indice del nivel
+# inmediato superior que si este publicado —su grupo, o su division— y queda
+# anotado en `usa_nivel_superior`.
+#
+# NOMBRES QUE CAMBIAN ENTRE REGIONES: `apertura` puede ser una lista de nombres
+# EXACTOS y se toma el primero que este en la planilla. Hace falta para 01.1.8,
+# que el INDEC escribe "etc," en GBA y "etc." en las otras cinco regiones. Antes
+# de esto el calculo por region cortaba en cinco de las seis. Nada de parecidos
+# aproximados: una lista explicita se ve en el diff, una similitud no.
 #
 # Es un supuesto, pero acotado y en la direccion correcta: se asume que la clase
 # se movio como el agregado que la contiene, que es lo mas cercano que hay.
@@ -57,6 +64,15 @@ clases:
   "01.1.1":
     apertura: Pan y cereales
 
+  "01.1.2":
+    apertura: Carnes y derivados
+
+  "01.1.3":
+    # El INDEC no publica indice para "Pescados y mariscos", igual que para
+    # "Otros alimentos". Se usa el del grupo Alimentos.
+    apertura: Alimentos
+    usa_nivel_superior: "01.1"
+
   "01.1.4":
     # En los ponderadores se llama "Leche, productos lacteos, huevos y alimentos
     # vegetales"; en los indices, sin la cola.
@@ -65,9 +81,18 @@ clases:
   "01.1.5":
     apertura: Aceites, grasas y manteca
 
+  "01.1.6":
+    apertura: Frutas
+
+  "01.1.7":
+    apertura: Verduras, tubérculos y legumbres
+
   "01.1.8":
-    # Ojo la coma final: la planilla dice "etc," y no "etc.".
-    apertura: Azúcar, dulces, chocolate, golosinas, etc,
+    # El INDEC escribe distinto la misma serie segun la region: "etc," (con
+    # coma) en GBA y "etc." en las otras cinco. Verificado 16/10/2026.
+    apertura:
+      - "Azúcar, dulces, chocolate, golosinas, etc,"
+      - "Azúcar, dulces, chocolate, golosinas, etc."
 
   "01.1.9":
     # El INDEC no publica indice para "Otros alimentos". Se usa el del grupo
@@ -77,6 +102,83 @@ clases:
 
   "01.2.1":
     apertura: Café, té, yerba y cacao
+
+  "01.2.2":
+    apertura: Aguas minerales, bebidas gaseosas y jugos
+
+  # --- Fuera de SEPA: ropa y calzado de las tiendas online (10/2026) ---------
+  # El INDEC publica el grupo y no la clase: "Prendas de vestir y materiales"
+  # (03.1) y "Calzado" (03.2). Se usa el grupo, igual que con 01.1.9.
+
+  "03.1.2":
+    apertura: Prendas de vestir y materiales
+    usa_nivel_superior: "03.1"
+
+  "03.2.1":
+    apertura: Calzado
+    usa_nivel_superior: "03.2"
+
+  # --- Fuera de SEPA: el resto de lo online y los combustibles (21/10/2026) ---
+  # Clases DEL INDICE: 05.1, 05.3 y 05.5 son grupos porque el INDEC no abre esas
+  # clases (ver ponderadores.clase_del_indice). Solo combustibles tiene serie
+  # propia; el resto usa la del grupo o la division que la contiene, verificadas
+  # en docs/ipc_aperturas.xls.
+
+  "07.2.2":
+    apertura: Combustibles y lubricantes para vehículos de uso del hogar
+
+  "06.1.1":
+    apertura: Productos medicinales, artefactos y equipos para la salud
+    usa_nivel_superior: "06.1"
+
+  "06.1.2":
+    apertura: Productos medicinales, artefactos y equipos para la salud
+    usa_nivel_superior: "06.1"
+
+  "12.1.3":
+    apertura: Cuidado personal
+    usa_nivel_superior: "12.1"
+
+  # Audiovisuales (09.1) y mantenimiento de la vivienda (04.3) solo se publican
+  # en GBA y Pampeana. En las otras cuatro regiones el nivel superior publicado
+  # es la division. La lista va de la mas cercana a la mas lejana y se toma la
+  # primera que este (verificado 21/10/2026).
+  "09.1.1":
+    apertura:
+      - Equipos audiovisuales, fotográficos y de procesamiento de la información
+      - Recreación y cultura
+    usa_nivel_superior: "09.1 (09 fuera de GBA y Pampeana)"
+
+  "09.1.3":
+    apertura:
+      - Equipos audiovisuales, fotográficos y de procesamiento de la información
+      - Recreación y cultura
+    usa_nivel_superior: "09.1 (09 fuera de GBA y Pampeana)"
+
+  "04.3.1":
+    apertura:
+      - Mantenimiento y reparación de la vivienda
+      - Vivienda, agua, electricidad, gas y otros combustibles
+    usa_nivel_superior: "04.3 (04 fuera de GBA y Pampeana)"
+
+  # Muebles, artefactos y herramientas: el INDEC no publica serie del grupo, solo
+  # la de la division "Equipamiento y mantenimiento del hogar".
+  "05.1":
+    apertura: Equipamiento y mantenimiento del hogar
+    usa_nivel_superior: "05"
+
+  "05.3":
+    apertura: Equipamiento y mantenimiento del hogar
+    usa_nivel_superior: "05"
+
+  "05.5":
+    apertura: Equipamiento y mantenimiento del hogar
+    usa_nivel_superior: "05"
+
+  # Mascotas no tiene serie ni de grupo: se usa la division.
+  "09.3.4":
+    apertura: Recreación y cultura
+    usa_nivel_superior: "09"
 
 # Para renormalizar hace falta el nivel general, que es el denominador natural
 # cuando se actualiza la canasta completa.

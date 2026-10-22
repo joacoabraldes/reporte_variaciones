@@ -97,21 +97,25 @@ def rango_intercuartil(valores: list[float]) -> float:
     return q3 - q1
 
 
-# =========================================================== CRITICO 3 de 8 ===
+# =========================================================== CRITICO 3 de 9 ===
 # QUE HACE     descarta ratios sospechosos antes de promediar
 # FORMULA      1) tope absoluto: fuera si ratio >= tope o <= 1/tope
 #              2) dispersion: fuera si |log_ratio - mediana| > umbral x dispersion
 #              con dispersion = MAD, y si da 0 el rango intercuartil / 2, y si
-#              eso tambien da 0 queda solo el tope
+#              eso tambien da 0 queda solo el tope. Un precio que NO cambio
+#              (ratio 1) nunca sale por dispersion
 # POR QUE ASI  sobre log(ratio) porque el log-return es simetrico: +50% y -33,3%
-#              se cancelan
-# LO VERIFICA  tests/test_indice.py::test_el_mad_cero_no_manda_todo_a_cuarentena
-#              y test_el_tope_absoluto_caza_un_error_de_tipeo
-# FALLA ASI    en goindola el 59,7% de los precios no se mueve, asi que la
+#              se cancelan. El filtro esta para cazar errores de tipeo, y un
+#              precio igual al del mes anterior no puede ser uno
+# LO VERIFICA  tests/test_indice.py::test_el_mad_cero_no_manda_todo_a_cuarentena,
+#              test_el_tope_absoluto_caza_un_error_de_tipeo y
+#              test_un_precio_que_no_cambio_nunca_es_un_valor_raro
+# FALLA ASI    en gondola el 59,7% de los precios no se mueve, asi que la
 #              dispersion da cero seguido y el criterio se cae a los fallbacks
-#              sin avisar. Con umbral 3,5 descarta el 10% de la muestra y baja
-#              el indice 0,41 puntos; el numero sigue siendo plausible. El
-#              umbral esta en discusion y se elige contra el dato del INDEC.
+#              sin avisar. Y al reves: cuando casi todo se movio igual, lo
+#              quieto parece raro. Hasta el 21/10/2026 pasaba: la carne picada de
+#              ago->sep dio -15,0% en vez de -9,7% porque mando a cuarentena los
+#              1.208 precios que no cambiaron. El umbral se elige contra el INDEC.
 # ============================================================================
 def detectar_outliers(
     relativos: list[Relativo],
@@ -172,7 +176,13 @@ def detectar_outliers(
         return candidatos, descartes, "solo_tope_absoluto"
 
     for r in candidatos:
-        if abs(r.log_ratio - mediana) > umbral_mad * dispersion:
+        # Un precio que no cambio no es un error de tipeo, aunque casi todo lo
+        # demas se haya movido y el quieto quede lejos de la mediana. Con
+        # tolerancia: el precio del mes es un promedio, y el mismo precio con
+        # centavos promediado sobre 31 y sobre 30 dias puede diferir en el
+        # ultimo bit.
+        no_cambio = math.isclose(r.precio_actual, r.precio_base, rel_tol=1e-9)
+        if not no_cambio and abs(r.log_ratio - mediana) > umbral_mad * dispersion:
             descartes.append(
                 Descarte(r.quote, MOTIVO_OUTLIER_MAD,
                          f"log_ratio {r.log_ratio:.4f} vs mediana {mediana:.4f} "
@@ -183,7 +193,7 @@ def detectar_outliers(
     return limpios, descartes, umbral_usado
 
 
-# =========================================================== CRITICO 2 de 8 ===
+# =========================================================== CRITICO 2 de 9 ===
 # QUE HACE     la muestra emparejada: que quotes entran a la variacion
 # FORMULA      solo los quotes con precio en los DOS meses y los dos positivos
 # POR QUE ASI  un producto nuevo no tiene contra que compararse, y uno que
@@ -222,7 +232,7 @@ def emparejar(
     return relativos, descartes
 
 
-# =========================================================== CRITICO 4 de 8 ===
+# =========================================================== CRITICO 4 de 9 ===
 # QUE HACE     la variacion de una categoria elemental
 # FORMULA      exp( promedio( ln(precio_actual / precio_base) ) )
 # POR QUE ASI  media geometrica y no aritmetica: abajo no hay ponderadores y los

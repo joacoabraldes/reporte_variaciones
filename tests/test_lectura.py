@@ -11,6 +11,7 @@ No tocan la red: el cliente de GCS se inyecta.
 from __future__ import annotations
 
 from datetime import date
+from pathlib import Path
 
 import pytest
 
@@ -35,12 +36,24 @@ class _Blob:
         self.generation = generation
 
 
+class _BlobDescargable(_Blob):
+    def download_to_filename(self, ruta: str) -> None:
+        Path(ruta).write_text(f"contenido de {self.name}", encoding="utf-8")
+
+
 class _ClienteFalso:
     def __init__(self, nombres: list[str]) -> None:
         self._blobs = [_Blob(n) for n in nombres]
 
     def list_blobs(self, bucket, prefix: str = ""):
         return [b for b in self._blobs if b.name.startswith(prefix)]
+
+    # bucket(nombre).blob(nombre).download_to_filename(ruta), como el de GCS.
+    def bucket(self, nombre: str) -> "_ClienteFalso":
+        return self
+
+    def blob(self, nombre: str) -> _BlobDescargable:
+        return _BlobDescargable(nombre)
 
 
 def _ruta(fecha: date, comercio: str) -> str:
@@ -204,3 +217,91 @@ def dataclass_replace(obj, **cambios):
     import dataclasses
 
     return dataclasses.replace(obj, **cambios)
+
+
+# --------------------------------------------------------------------------- #
+# Tope de memoria de DuckDB
+# --------------------------------------------------------------------------- #
+
+
+def test_la_conexion_tiene_tope_de_memoria_y_de_hilos(tmp_path, monkeypatch):
+    """Sin tope DuckDB toma el 80% de la RAM.
+
+    El 20/10/2026 el recalculo de agosto->septiembre murio por memoria y se
+    llevo puesto el editor. Las variables son las mismas del repo de captura.
+    """
+    from reporte.lectura import _conectar
+
+    monkeypatch.setenv("PRECIOS_MEMORIA_DUCKDB", "1GB")
+    monkeypatch.setenv("PRECIOS_HILOS_DUCKDB", "2")
+    con = _conectar(tmp_path)
+    memoria = con.execute("SELECT current_setting('memory_limit')").fetchone()[0]
+    hilos = con.execute("SELECT current_setting('threads')").fetchone()[0]
+    assert "GiB" in memoria or "MiB" in memoria
+    assert float(memoria.split()[0]) < 1.5 if "GiB" in memoria else True
+    assert int(hilos) == 2
+
+
+def test_sin_variables_usa_los_defaults(tmp_path, monkeypatch):
+    from reporte.lectura import HILOS_DEFAULT, _conectar
+
+    monkeypatch.delenv("PRECIOS_MEMORIA_DUCKDB", raising=False)
+    monkeypatch.delenv("PRECIOS_HILOS_DUCKDB", raising=False)
+    con = _conectar(tmp_path)
+    memoria = con.execute("SELECT current_setting('memory_limit')").fetchone()[0]
+    assert float(memoria.split()[0]) < 4.5      # 4GB, no el 80% de la maquina
+    assert int(con.execute("SELECT current_setting('threads')").fetchone()[0]) == HILOS_DEFAULT
+
+
+# --------------------------------------------------------------------------- #
+# Prefijos: una carpeta no es un prefijo de texto
+# --------------------------------------------------------------------------- #
+
+
+def test_baja_las_fotos_de_combustibles_al_mismo_arbol_que_captura(tmp_path):
+    """`combustibles/fecha=Y/vigentes.csv`: lo que lee `online_indice.cargar_combustibles`."""
+    nombres = [
+        "staged/combustibles/fecha=2026-11-03/vigentes.csv",
+        "staged/combustibles/fecha=2026-11-03/notas.txt",
+        "staged/relevamiento_online/sitio=easy/fecha=2026-11-03/datos.json",
+    ]
+    lector = LectorBucket(cache=tmp_path, cliente=_ClienteFalso(nombres))
+
+    raiz = lector.bajar_fotos_combustibles()
+
+    assert raiz == tmp_path / "etapa5" / "datos_oficiales" / "combustibles"
+    foto = raiz / "fecha=2026-11-03" / "vigentes.csv"
+    assert foto.read_text(encoding="utf-8") == (
+        "contenido de staged/combustibles/fecha=2026-11-03/vigentes.csv"
+    )
+    assert not (raiz / "fecha=2026-11-03" / "notas.txt").exists()
+
+
+def test_una_foto_ya_bajada_no_se_vuelve_a_bajar(tmp_path):
+    """Captura nunca pisa una foto publicada: la del cache es la misma."""
+    foto = tmp_path / "etapa5" / "datos_oficiales" / "combustibles" / "fecha=2026-11-03" / "vigentes.csv"
+    foto.parent.mkdir(parents=True)
+    foto.write_text("la que ya estaba", encoding="utf-8")
+    lector = LectorBucket(cache=tmp_path, cliente=_ClienteFalso(
+        ["staged/combustibles/fecha=2026-11-03/vigentes.csv"]))
+
+    lector.bajar_fotos_combustibles()
+
+    assert foto.read_text(encoding="utf-8") == "la que ya estaba"
+
+
+def test_una_carpeta_no_trae_las_que_empiezan_igual(tmp_path):
+    """El 20/10/2026 "staged/clasificacion" trajo tambien la clasificacion online.
+
+    GCS no tiene carpetas: sin la barra al final, el prefijo matchea cualquier
+    nombre que empiece igual.
+    """
+    nombres = [
+        "staged/clasificacion/clasificacion.parquet",
+        "staged/clasificacion_online/clasificacion_online.parquet",
+    ]
+    lector = LectorBucket(cache=tmp_path, cliente=_ClienteFalso(nombres))
+    for prefijo in ("staged/clasificacion", "staged/clasificacion/"):
+        assert [b.name for b in lector._listar_carpeta(prefijo)] == [
+            "staged/clasificacion/clasificacion.parquet"
+        ]

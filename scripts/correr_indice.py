@@ -22,6 +22,7 @@ no persiste nada.
     python scripts/correr_indice.py --salida
     python scripts/correr_indice.py --precio precio_efectivo
     python scripts/correr_indice.py --desde 2026-08-03 --hasta 2026-08-16
+    python scripts/correr_indice.py --ventana mensual --con-online   # + tiendas y surtidor
 """
 
 from __future__ import annotations
@@ -45,6 +46,7 @@ from reporte.agregacion import (  # noqa: E402
     clases_desde_categorias,
     clases_sin_ponderador,
     laspeyres,
+    variacion_nacional,
 )
 from reporte.elemental import (  # noqa: E402
     detectar_outliers,
@@ -57,18 +59,31 @@ from reporte.elemental import (  # noqa: E402
     indice_elemental,
 )
 from reporte.lectura import LectorBucket  # noqa: E402
+from reporte.online_indice import (  # noqa: E402
+    ANTIGUEDAD_MAXIMA_DIAS,
+    cargar_combustibles,
+    cargar_fotos,
+    clasificacion_por_item,
+    por_categoria,
+    quotes_por_articulo,
+    sumar_grupos,
+)
 from reporte.ponderadores import (  # noqa: E402
     REGION_NACIONAL,
+    REGIONES,
     actualizar_por_precios,
     articulo_de_categoria,
-    clase_coicop,
+    clase_del_indice,
     calcular as calcular_pesos_engho,
     cobertura_por_clase,
     conectar as conectar_engho,
     factores_actualizacion,
+    nivel_de_la_canasta,
     pesos_de_articulos,
+    pesos_regionales,
     ponderadores_de_clase,
 )
+from reporte.regiones import cargar_regiones, region_de_sucursal  # noqa: E402
 from reporte.periodo import (  # noqa: E402
     AGREGADORES,
     AGREGADOR_DEFAULT,
@@ -185,6 +200,85 @@ def pesos_de_criterio(
 
 
 # --------------------------------------------------------------------------- #
+# Por region, como el INDEC
+# --------------------------------------------------------------------------- #
+
+
+def variacion_por_region(
+    precios_base: dict[ClaveQuote, float],
+    precios_act: dict[ClaveQuote, float],
+    articulo_de: dict[str, str],
+    region_de: dict[tuple[str, str], str | None],
+    pesos_engho_region: dict[str, dict[str, float]],
+    pond_region: dict[str, dict[str, tuple[str, float]]],
+    pond_base_region: dict[str, dict[str, tuple[str, float]]],
+    factores_region: dict[str, dict[str, float]],
+    clases_taxonomia: set[str],
+    parametros: ParametrosVentana,
+) -> tuple[float, list[tuple], int]:
+    """El nacional como lo arma el INDEC: cada region y despues la suma (formulas 7 a 15).
+
+    En cada region: un Jevons por articulo con los quotes de sus sucursales,
+    las clases con los pesos ENGHo de la region, y Laspeyres con los
+    ponderadores de clase de la region. El nacional sale de
+    `agregacion.variacion_nacional`, partiendo del nivel del INDEC de esa misma
+    canasta en cada region (`ponderadores.nivel_de_la_canasta`, con los factores
+    de la planilla de `docs/`, que termina en julio: un mes antes de la base).
+
+    Devuelve (indice nacional, filas por region, quotes sin region).
+    """
+    def partir(precios):
+        por: dict[str, dict] = defaultdict(dict)
+        sin = 0
+        for k, p in precios.items():
+            r = region_de.get((k[0], k[1]))
+            if r is None:
+                sin += 1
+            else:
+                por[r][k] = p
+        return por, sin
+
+    base_r, _ = partir(precios_base)
+    act_r, sin_region = partir(precios_act)
+
+    variaciones: dict[str, float] = {}
+    niveles: dict[str, float] = {}
+    filas: list[tuple] = []
+    for r in pesos_regionales():
+        ga_b = agrupar(base_r.get(r, {}), articulo_de)
+        ga_a = agrupar(act_r.get(r, {}), articulo_de)
+        indices_art: dict[str, float] = {}
+        n_quotes = 0
+        for art in set(ga_b) | set(ga_a):
+            res = indice_elemental(
+                art, ga_b.get(art, {}), ga_a.get(art, {}),
+                umbral_mad=parametros.umbral_mad,
+                tope_ratio=parametros.tope_ratio,
+                minimo_quotes=parametros.minimo_quotes_mad,
+            )
+            if res.indice is not None:
+                indices_art[art] = res.indice
+                n_quotes += res.n_quotes
+        paso = clases_desde_categorias(
+            indices_art, {a: clase_del_indice(a) for a in indices_art},
+            pesos_engho_region[r],
+        )
+        universo = {c: pond_region[r][c][1] for c in clases_taxonomia
+                    if c in pond_region[r]}
+        agregado = agregar(r, r, paso.indices, universo)
+        if agregado.indice is None:
+            raise SystemExit(f"la region {r} no tiene ningun articulo con dato: "
+                             "el nacional por regiones necesita las seis")
+        variaciones[r] = agregado.indice
+        niveles[r] = nivel_de_la_canasta(
+            pond_base_region[r], factores_region[r], set(paso.indices))
+        filas.append((r, n_quotes, agregado.indice, agregado.cobertura, niveles[r]))
+
+    return (variacion_nacional(variaciones, niveles, pesos_regionales()),
+            filas, sin_region)
+
+
+# --------------------------------------------------------------------------- #
 # Reporte
 # --------------------------------------------------------------------------- #
 
@@ -267,8 +361,25 @@ def main(argv=None) -> int:
                         "estadistico y deja solo el tope absoluto")
     p.add_argument("--tope-ratio", type=float, default=None,
                    help="pisa la banda del tope absoluto del YAML")
+    # Las tiendas online y el surtidor de combustibles (etapa 5). Sus quotes se
+    # suman al grupo de su articulo ENGHo y de ahi es el mismo calculo que SEPA. Solo
+    # mensual: el precio del mes de un articulo online es la media de sus fotos
+    # diarias, y una semana no alcanza el minimo de dias.
+    p.add_argument("--con-online", action="store_true",
+                   help="suma las tiendas online y el surtidor de combustibles "
+                        "(solo --ventana mensual)")
+    # Como el INDEC: cada region por separado y despues el nacional con los
+    # pesos regionales (formula 15). Sin esto se mezcla el pais en un solo
+    # Jevons y cada region pesa por cuantas sucursales tiene en SEPA.
+    p.add_argument("--por-region", action="store_true",
+                   help="calcula cada region y arma el nacional como el INDEC")
     p.add_argument("-v", "--verboso", action="store_true")
     args = p.parse_args(argv)
+    if args.con_online and args.ventana != MENSUAL:
+        p.error("--con-online es solo para --ventana mensual")
+    if args.por_region and args.con_online:
+        p.error("--por-region todavia no resuelve la region de lo online ni del "
+                "surtidor; no cambia ningun numero hasta noviembre->diciembre")
 
     logging.basicConfig(
         level=logging.INFO if args.verboso else logging.WARNING,
@@ -345,6 +456,8 @@ def _correr(args) -> int:
     print()
     print(f"ponderadores        {args.region}"
           + ("" if args.sin_actualizar else ", actualizados por precios"))
+    print("fuentes             SEPA"
+          + (" + tiendas online + surtidor de combustibles" if args.con_online else ""))
     print()
     print(f"parametros de la ventana '{parametros.tipo}':")
     print(f"  agregador del mes           {args.agregador}"
@@ -398,6 +511,45 @@ def _correr(args) -> int:
             + ", ".join(sorted(sin_articulo))
         )
 
+    # -- lo online: las tiendas y el surtidor ------------------------------ #
+    # La tabla publicada trae categoria, clase y articulo, pero el articulo que
+    # manda es el de config/mapeo_categorias_engho.yaml, igual que para SEPA.
+    # Si las dos fuentes no coinciden se corta: quedarse con una en silencio es
+    # elegir el peso sin saber cual.
+    clasif_online: dict = {}
+    fotos_online: dict = {}
+    if args.con_online:
+        clasif_online = clasificacion_por_item(lector.clasificacion_online())
+        no_coinciden = sorted({
+            (cat, clase, art) for cat, clase, art in clasif_online.values()
+            if art_de_cat.get(cat) != art or clase_del_indice(art) != clase
+        })
+        if no_coinciden:
+            raise SystemExit(
+                "la clasificacion online no coincide con "
+                "config/mapeo_categorias_engho.yaml (categoria, clase, articulo): "
+                + ", ".join(map(str, no_coinciden[:10]))
+            )
+        for cat, clase, _ in clasif_online.values():
+            clase_de_categoria[cat] = clase
+        fotos_online = cargar_fotos(lector.bajar_fotos_online())
+
+        # Combustibles: el surtidor entra por el mismo camino. Su categoria sale
+        # del producto del dataset, y el articulo del mismo mapeo ENGHo.
+        fotos_comb, cat_comb = cargar_combustibles(lector.bajar_fotos_combustibles())
+        sin_mapeo = sorted(set(cat_comb.values()) - set(art_de_cat))
+        if sin_mapeo:
+            raise SystemExit(
+                "estas categorias de combustibles no tienen articulo en "
+                "config/mapeo_categorias_engho.yaml: " + ", ".join(sin_mapeo)
+            )
+        for clave, cat in cat_comb.items():
+            art = art_de_cat[cat]
+            clasif_online[clave] = (cat, clase_del_indice(art), art)
+            clase_de_categoria[cat] = clase_del_indice(art)
+        for dia, quotes in fotos_comb.items():
+            fotos_online.setdefault(dia, {}).update(quotes)
+
     # articulo -> categorias que caen en el, para poder nombrar las filas.
     cat_de_articulo: dict[str, list[str]] = defaultdict(list)
     for categoria, art in sorted(art_de_cat.items()):
@@ -408,16 +560,42 @@ def _correr(args) -> int:
     n_prod_art: dict[str, int] = defaultdict(int)
     for producto, (categoria, _) in clasif.items():
         n_prod_art[art_de_cat[categoria]] += 1
+    for _, _, art in clasif_online.values():
+        n_prod_art[art] += 1
 
     # -- ponderadores de la ENGHo (el dato que reemplaza al supuesto) ------- #
 
     con_engho = conectar_engho()
     try:
-        pesos_art_engho = calcular_pesos_engho(args.region, con=con_engho)
+        # El mapeo tiene tambien los articulos online; sin --con-online no son
+        # parte de esta corrida y no van a la tabla de cobertura.
+        clases_en_uso = set(clase_de_categoria.values())
+        pesos_art_engho = [
+            pa for pa in calcular_pesos_engho(args.region, con=con_engho)
+            if pa.clase in clases_en_uso
+        ]
         pesos_engho = pesos_de_articulos(pesos_art_engho)
         cobertura = cobertura_por_clase(pesos_art_engho, con=con_engho)
+        # Por region: los pesos ENGHo de cada una. Un articulo sin gasto en
+        # una region pesa cero ahi (rimel en Patagonia), no corta.
+        pesos_engho_region = {
+            r: pesos_de_articulos(calcular_pesos_engho(
+                r, con=con_engho, omitir_sin_gasto=True))
+            for r in REGIONES.values()
+        } if args.por_region else {}
     finally:
         con_engho.close()
+
+    # La region de cada sucursal: captura publica el partido (georef) y este
+    # repo decide cual es GBA (config/regiones.yaml).
+    region_de: dict[tuple[str, str], str | None] = {}
+    if args.por_region:
+        regiones_cfg = cargar_regiones()
+        region_de = {
+            (s["id_comercio"], s["id_sucursal"]): region_de_sucursal(
+                s["provincia"], s["provincia_id"], s["departamento_id"], regiones_cfg)
+            for s in lector.sucursales()
+        }
 
     obs = lector.observaciones(
         min(inv.dias_presentes), max(inv.dias_presentes),
@@ -452,6 +630,22 @@ def _correr(args) -> int:
         print(f"{per.etiqueta:<12} {q.n_quotes:>12,} {q.n_descartados:>14,} "
               f"{len(q.dias_presentes):>6} {len(q.huecos):>8}")
 
+    # Online: articulo -> {(sitio, item_id): media de las fotos del mes}, con el
+    # mismo minimo de dias que SEPA. Un mes sin fotos suficientes queda vacio.
+    online: dict[str, dict] = {}
+    if args.con_online:
+        print()
+        print(f"{'online':<12} {'con dato':>12}   (fotos desde "
+              f"{min(fotos_online) if fotos_online else '-'})")
+        print("-" * ANCHO)
+        for per in periodos:
+            online[per.etiqueta] = quotes_por_articulo(
+                fotos_online, clasif_online, per.etiqueta,
+                parametros.minimo_dias_quote,
+            )
+            n = sum(len(g) for g in online[per.etiqueta].values())
+            print(f"{per.etiqueta:<12} {n:>12,}")
+
     # -- 5. variacion periodo contra periodo -------------------------------- #
 
     if solo_uno:
@@ -466,6 +660,15 @@ def _correr(args) -> int:
             print("pueden caer bajo el minimo de dias y salir de la muestra.")
         print("=" * ANCHO)
         return 0
+
+    # Por region: ponderadores de clase actualizados (para Laspeyres), y los
+    # base y los factores (para el nivel del que parte cada region).
+    pond_region = {r: cargar_ponderadores(r, not args.sin_actualizar)
+                   for r in REGIONES.values()} if args.por_region else {}
+    pond_base_region = {r: ponderadores_de_clase(r)
+                        for r in REGIONES.values()} if args.por_region else {}
+    factores_region = {r: factores_actualizacion(r)
+                       for r in REGIONES.values()} if args.por_region else {}
 
     pond = cargar_ponderadores(args.region, not args.sin_actualizar)
     # Los pesos de `pond` estan renormalizados a 1 sobre las clases del piloto:
@@ -487,8 +690,22 @@ def _correr(args) -> int:
         print(f"EMPAREJADOS (los que cuentan) {len(emparejados):>12,}  "
               f"({100*len(emparejados)/max(len(q_act.precios),1):.1f}% del actual)")
 
-        g_base = agrupar(q_base.precios, categoria_de)
-        g_act = agrupar(q_act.precios, categoria_de)
+        # Online se suma a los mismos grupos: por categoria para el
+        # diagnostico, por articulo para el calculo. Las claves no chocan.
+        on_base = online.get(base_per.etiqueta, {})
+        on_act = online.get(act_per.etiqueta, {})
+        if args.con_online:
+            emp_online = ({k for g in on_base.values() for k in g}
+                          & {k for g in on_act.values() for k in g})
+            print(f"  online emparejados          {len(emp_online):>12,}"
+                  + ("  (sin dos meses de fotos: no cambia el numero)"
+                     if not emp_online else ""))
+            emparejados |= emp_online
+
+        g_base = sumar_grupos(agrupar(q_base.precios, categoria_de),
+                              por_categoria(on_base, clasif_online))
+        g_act = sumar_grupos(agrupar(q_act.precios, categoria_de),
+                             por_categoria(on_act, clasif_online))
 
         # -- por categoria elemental: SOLO DIAGNOSTICO --
         # El calculo no usa estos indices. La unidad del indice es el articulo
@@ -534,8 +751,8 @@ def _correr(args) -> int:
         # a la MISMA media geometrica. Asi el peso relativo entre las dos sale
         # solo, por cuantos ratios aporta cada una, sin elegir un criterio de
         # reparto y sin salir del espacio geometrico.
-        ga_base = agrupar(q_base.precios, articulo_de)
-        ga_act = agrupar(q_act.precios, articulo_de)
+        ga_base = sumar_grupos(agrupar(q_base.precios, articulo_de), on_base)
+        ga_act = sumar_grupos(agrupar(q_act.precios, articulo_de), on_act)
 
         indices_art: dict[str, float] = {}
         indices_carli: dict[str, float] = {}
@@ -561,7 +778,7 @@ def _correr(args) -> int:
                 indices_art[art] = res.indice
                 n_quotes_art[art] = res.n_quotes
 
-        clase_de_articulo = {a: clase_coicop(a) for a in indices_art}
+        clase_de_articulo = {a: clase_del_indice(a) for a in indices_art}
         cuenta_cats = defaultdict(int)
         for art in indices_art:
             cuenta_cats[clase_de_articulo[art]] += 1
@@ -681,7 +898,31 @@ def _correr(args) -> int:
                   f"piloto ({sum(pesos_universo.values()):.4f} renormalizado)")
             print(f"                    {cubierto*100:.2f}% del IPC {args.region} "
                   f"({cubierto:.4f} de 1.0000 de la canasta completa)")
-            variaciones.append(VariacionPeriodo(base_per, act_per, agregado.indice))
+
+            indice_mes = agregado.indice
+            if args.por_region:
+                indice_mes, filas, sin_region = variacion_por_region(
+                    q_base.precios, q_act.precios, articulo_de, region_de,
+                    pesos_engho_region, pond_region, pond_base_region,
+                    factores_region, clases_taxonomia, parametros,
+                )
+                print()
+                print("POR REGION, COMO EL INDEC (cada region y despues el nacional)")
+                print(f"{'region':<11} {'peso':>6} {'quotes':>10} {'var %':>9} "
+                      f"{'cobertura':>10} {'nivel base':>11}")
+                print("-" * ANCHO)
+                pesos_r = pesos_regionales()
+                for r, n, v, cob, nivel in filas:
+                    print(f"{r:<11} {pesos_r[r]:>6.4f} {n:>10,} {(v-1)*100:>+9.4f} "
+                          f"{cob*100:>9.1f}% {nivel:>11.2f}")
+                print("-" * ANCHO)
+                print(f"  {(indice_mes-1)*100:>+8.4f}%   nacional por regiones "
+                      f"(formula 15)  <-- el que vale con --por-region")
+                print(f"  {agregado.variacion_pct:>+8.4f}%   el pais mezclado en un "
+                      f"solo Jevons, para comparar")
+                print(f"  quotes sin region: {sin_region:,} (no entran al calculo "
+                      f"por region)")
+            variaciones.append(VariacionPeriodo(base_per, act_per, indice_mes))
 
         # -- diagnostico --
         print()
@@ -739,6 +980,15 @@ def _correr(args) -> int:
     print("- Region: se usan los ponderadores de", args.region, "para todo el pais.")
     print("  El corte regional real necesita la localidad de cada sucursal.")
     print("- Clasificacion: 100% automatica, ningun producto revisado a mano.")
+    if args.con_online:
+        print("- Online: tiendas y surtidor, con la misma muestra emparejada,")
+        print("  el mismo filtro y el mismo Jevons que SEPA. Diez busquedas por")
+        print("  tienda no son una muestra representativa de la clase: tener")
+        print("  fuente no es medirla bien.")
+        print("- Combustibles: el dataset de Energia no tiene a YPF al dia (el")
+        print("  97,9% de sus precios tiene mas de un año) y se cortan los")
+        print(f"  precios de mas de {ANTIGUEDAD_MAXIMA_DIAS} dias: mide Shell, Axion,"
+              " Puma, Gulf y el resto.")
     if inv.comercios_faltantes:
         print(f"- {len(inv.comercios_faltantes)} dias tienen comercios que no reportaron:")
         print("  sus quotes pueden caer bajo el minimo de dias y salir de la muestra")

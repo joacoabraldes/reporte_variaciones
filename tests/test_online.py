@@ -10,13 +10,10 @@ from __future__ import annotations
 import pytest
 
 from reporte.online import (  # noqa: E402
-    ObservacionOnline,
     ProductoOnline,
     comparar,
-    observaciones_de_respuesta,
     precio_de_item,
     productos_de_respuesta,
-    quotes_de_observaciones,
     resumir,
 )
 
@@ -182,78 +179,10 @@ def test_el_resumen_sin_nada_no_divide_por_cero():
 
 
 # --------------------------------------------------------------------------- #
-# Relevamiento propio: seguir el MISMO artículo en el tiempo
+# Los tests del relevamiento se mudaron con el codigo.
+#
+# Seguir el mismo articulo en el tiempo es captura, y vive en
+# `relevamiento_precios/tests/test_online.py`. Aca quedan los de la sonda, que
+# es lo unico que hace este archivo ahora: comparar un precio online contra lo
+# que esa cadena le declaro a SEPA.
 # --------------------------------------------------------------------------- #
-
-
-def producto_vtex(item_id, precio, ean="", nombre="Heladera", marca="Lacar"):
-    return {
-        "productName": nombre,
-        "brand": marca,
-        "categories": ["/Heladeras/"],
-        "items": [
-            {
-                "itemId": item_id,
-                "ean": ean,
-                "name": nombre,
-                "sellers": [
-                    {"commertialOffer": {"Price": precio, "AvailableQuantity": 7}}
-                ],
-            }
-        ],
-    }
-
-
-def test_la_clave_es_el_sku_y_no_el_ean():
-    """Frávega no trae EAN: si la clave fuera el EAN no se podría seguir nada."""
-    obs = observaciones_de_respuesta(
-        "fravega", [producto_vtex("990007577", 379999.0, ean="")], "2026-10-14"
-    )
-    assert len(obs) == 1
-    o = obs[0]
-    assert o.clave == ("fravega", "990007577")
-    assert o.ean == ""
-    assert o.precio == 379999.0
-    assert o.disponible == 7
-    assert o.marca == "Lacar"
-
-
-def test_un_item_sin_sku_no_se_puede_seguir():
-    obs = observaciones_de_respuesta(
-        "fravega", [producto_vtex("", 100.0)], "2026-10-14"
-    )
-    assert obs == []
-
-
-def test_el_sitio_entra_en_la_clave():
-    """Dos sitios pueden usar el mismo número de SKU y no son el mismo artículo."""
-    a = observaciones_de_respuesta("fravega", [producto_vtex("1", 100.0)], "d")[0]
-    b = observaciones_de_respuesta("easy", [producto_vtex("1", 200.0)], "d")[0]
-    assert a.clave != b.clave
-    quotes = quotes_de_observaciones([a, b])
-    assert quotes == {("fravega", "1"): 100.0, ("easy", "1"): 200.0}
-
-
-def test_un_articulo_que_aparece_en_dos_busquedas_cuenta_una_vez():
-    """Dos términos pueden devolver el mismo artículo: es un quote, no dos."""
-    o = ObservacionOnline("easy", "77", "Taladro", 50000.0, "2026-10-14")
-    quotes = quotes_de_observaciones([o, o])
-    assert quotes == {("easy", "77"): 50000.0}
-
-
-def test_los_quotes_tienen_la_forma_que_consume_el_calculo_del_indice():
-    """Es lo que permite reusar la muestra emparejada y Jevons sin reescribirlos."""
-    from reporte.elemental import indice_elemental
-
-    base = quotes_de_observaciones([
-        ObservacionOnline("easy", "1", "a", 1000.0, "d1"),
-        ObservacionOnline("easy", "2", "b", 2000.0, "d1"),
-    ])
-    actual = quotes_de_observaciones([
-        ObservacionOnline("easy", "1", "a", 1100.0, "d2"),
-        ObservacionOnline("easy", "2", "b", 2200.0, "d2"),
-    ])
-    r = indice_elemental("easy", base, actual)
-    # Los dos subieron 10%: la geométrica de 1,1 y 1,1 es 1,1.
-    assert r.variacion_pct == pytest.approx(10.0)
-    assert r.n_quotes == 2

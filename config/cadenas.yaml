@@ -43,6 +43,16 @@ cadenas:
     plataforma: vtex
     id_comercio: null
 
+  farmacity:
+    nombre: Farmacity
+    host: www.farmacity.com
+    plataforma: vtex
+    # Es informante de SEPA (el 24), aunque el indice la excluye por tener poco
+    # surtido comparable (ver config/comercios.yaml del repo de captura). Por
+    # eso es la unica tienda no-super del relevamiento online que se puede
+    # calibrar contra lo que declara por ley.
+    id_comercio: "24"
+
 sin_api:
 
   coto:
@@ -58,91 +68,16 @@ sin_api:
     motivo: redirige a una página normal, no expone catálogo en esa ruta
 
 # --------------------------------------------------------------------------- #
-# Fuera de la gondola de supermercado: lo que SEPA NO cubre.
+# Las fuentes que NO son SEPA se mudaron al repo de captura.
 #
-# Estos NO tienen contraparte en SEPA, asi que no se pueden cruzar: son fuente
-# primaria. Aca el objetivo no es comparar, es medir lo que no esta medido.
+# Relevar precios es capturar, y la captura vive en `relevamiento_precios`
+# porque un bug alla cuesta datos perdidos para siempre: el catalogo de una
+# tienda no tiene historico. Estan en:
 #
-# Verificado a mano: los tres corren VTEX y responden con el mismo pedido que
-# las cadenas, asi que el codigo de `src/reporte/online.py` sirve tal cual.
+#     relevamiento_precios/config/fuentes_online.yaml
+#     relevamiento_precios/src/precios/online/
+#
+# Lo que queda aca arriba es lo que usa `scripts/sondeo_online.py`, que no
+# releva: compara un catalogo contra lo que esa misma cadena le declaro a SEPA.
+# Eso es analisis y por eso se queda.
 # --------------------------------------------------------------------------- #
-
-fuera_de_gondola:
-
-  farmacity:
-    nombre: Farmacity
-    host: www.farmacity.com
-    plataforma: vtex
-    trae_ean: true
-    coicop: ["06.1"]          # productos medicinales, 4,198% del IPC
-    # La canasta. Se fija aca y no se cambia: cambiarla rompe la muestra
-    # emparejada, porque los articulos que entran y salen no tienen con que
-    # compararse. Agregar un termino nuevo esta bien; sacar uno no.
-    terminos:
-      - ibuprofeno
-      - paracetamol
-      - amoxicilina
-      - omeprazol
-      - ibupirac
-      - aspirina
-      - alcohol en gel
-      - algodon
-      - curitas
-      - protector solar
-
-  fravega:
-    nombre: Fravega
-    host: www.fravega.com
-    plataforma: vtex
-    # OJO: no trae EAN. Para un indice no es fatal —se sigue el MISMO item mes a
-    # mes por su id, que es lo que hace el INDEC— pero no se puede cruzar contra
-    # ninguna otra fuente.
-    trae_ean: false
-    coicop: ["09.1", "05.3"]  # audiovisuales e informatica, artefactos del hogar
-    terminos:
-      - heladera
-      - lavarropas
-      - televisor
-      - notebook
-      - celular
-      - microondas
-      - aire acondicionado
-      - cafetera
-      - licuadora
-      - ventilador
-
-  easy:
-    nombre: Easy
-    host: www.easy.com.ar
-    plataforma: vtex
-    trae_ean: true
-    coicop: ["05.1", "05.5", "04.3"]  # muebles, herramientas, mantenimiento
-    terminos:
-      - pintura latex
-      - cemento
-      - taladro
-      - silla
-      - colchon
-      - canilla
-      - cable
-      - lampara led
-      - cerradura
-      - manguera
-
-# --------------------------------------------------------------------------- #
-# Bloqueados: necesitan credenciales, no mas codigo.
-# --------------------------------------------------------------------------- #
-
-bloqueados:
-
-  mercadolibre:
-    nombre: MercadoLibre
-    # La API publica devuelve {"message":"forbidden","status":403} en todos los
-    # endpoints, incluido /sites/MLA/search: hoy exige OAuth con una app
-    # registrada. Y la web publica redirige a /gz/account-verification, asi que
-    # el HTML vuelve sin un solo precio.
-    motivo: requiere OAuth con app registrada
-    que_hace_falta: >
-      una cuenta de MercadoLibre, crear una app de desarrollador y usar su
-      client_id y client_secret para pedir un token. Es gratis, pero es una
-      decision de alguien con cuenta: no es algo que se resuelva con codigo.

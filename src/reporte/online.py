@@ -189,90 +189,24 @@ def resumir(
 
 
 # --------------------------------------------------------------------------- #
-# Relevamiento propio: las fuentes que SEPA no cubre
+# El relevamiento se mudo al repo de captura.
 #
-# Acá no hay nada contra qué cruzar, así que el trabajo es otro: seguir el MISMO
-# artículo a lo largo del tiempo. Es lo que hace el INDEC —"el encuestador
-# deberá buscar el mismo bien observando los atributos que detalló la primera
-# vez"— y es lo que permite que el cálculo del índice sirva tal cual.
+# Lo que estaba aca —leer los catalogos de VTEX y Magento y guardar una foto
+# por dia— es CAPTURA, y vive en `relevamiento_precios`:
+#
+#     precios.online.catalogos    los dos aplanadores
+#     precios.online.relevar      el pedido HTTP y la foto
+#     precios.cli relevar-online  el comando
+#
+# Se mudo porque un catalogo online NO tiene historico: solo dice que vale algo
+# hoy. Lo que no se guardo hoy no se puede recuperar manana, que es la misma
+# razon por la que la bajada de SEPA esta en el otro repo.
+#
+# Lo que queda en este archivo es la SONDA: comparar un precio online contra lo
+# que esa misma cadena le declaro a SEPA. Eso no captura nada, lee del bucket y
+# contesta una pregunta. Es analisis, y por eso se queda.
+#
+# El consumo de las fotos relevadas se hace por el DATO, no importando codigo
+# del otro repo: `scripts/variacion_online.py` lee el JSON y arma los quotes.
+# La interfaz entre los dos repos es el dato, no el codigo.
 # --------------------------------------------------------------------------- #
-
-# La clave del quote online. `item_id` es el SKU de la tienda, que es estable
-# entre corridas; el EAN no sirve como clave porque Frávega no lo trae.
-# La tienda online es UNA sucursal, así que no hay dimensión de sucursal.
-ClaveOnline = tuple[str, str]  # (sitio, item_id)
-
-
-@dataclass(slots=True)
-class ObservacionOnline:
-    """Un artículo de un sitio, en una fecha."""
-
-    sitio: str
-    item_id: str
-    nombre: str
-    precio: float
-    fecha: str
-    ean: str = ""
-    marca: str = ""
-    categoria: str = ""
-    precio_lista: float | None = None
-    disponible: int = 0
-
-    @property
-    def clave(self) -> ClaveOnline:
-        return (self.sitio, self.item_id)
-
-
-def observaciones_de_respuesta(
-    sitio: str, datos: list, fecha: str
-) -> list[ObservacionOnline]:
-    """Aplana la respuesta del catálogo a observaciones con clave estable.
-
-    Se saltea el item sin `itemId` o sin precio: sin clave no se puede seguir en
-    el tiempo, y sin precio no hay nada que medir. Los dos descartes son
-    silenciosos a propósito acá y contados por quien llama, igual que en el
-    resto del proyecto.
-    """
-    salida: list[ObservacionOnline] = []
-    for producto in datos:
-        for item in producto.get("items") or []:
-            item_id = str(item.get("itemId") or "").strip()
-            precio, lista = precio_de_item(item)
-            if not item_id or precio is None:
-                continue
-            vendedor = (item.get("sellers") or [{}])[0]
-            oferta = vendedor.get("commertialOffer") or {}
-            salida.append(
-                ObservacionOnline(
-                    sitio=sitio,
-                    item_id=item_id,
-                    nombre=item.get("name") or producto.get("productName") or "",
-                    precio=precio,
-                    fecha=fecha,
-                    ean=(item.get("ean") or "").strip(),
-                    marca=producto.get("brand") or "",
-                    categoria=(producto.get("categories") or [""])[0],
-                    precio_lista=lista,
-                    disponible=int(oferta.get("AvailableQuantity") or 0),
-                )
-            )
-    return salida
-
-
-def quotes_de_observaciones(
-    observaciones: list[ObservacionOnline],
-) -> dict[ClaveOnline, float]:
-    """`{(sitio, item_id): precio}`, listo para el cálculo del índice.
-
-    Es la misma forma que consume `elemental.indice_elemental`, así que la
-    muestra emparejada, el filtro de valores raros y Jevons son **los mismos**
-    que para SEPA. No hay un segundo cálculo que pueda divergir del primero.
-
-    Si un item aparece dos veces en el relevamiento —porque dos términos de
-    búsqueda lo devolvieron— se queda el primero. El precio es el mismo: lo que
-    cambia es por qué término se encontró.
-    """
-    salida: dict[ClaveOnline, float] = {}
-    for o in observaciones:
-        salida.setdefault(o.clave, o.precio)
-    return salida

@@ -245,7 +245,7 @@ AGREGADORES = {
 AGREGADOR_DEFAULT = "mediana"
 
 
-# =========================================================== CRITICO 1 de 8 ===
+# =========================================================== CRITICO 1 de 9 ===
 # QUE HACE     el precio del mes de cada quote, a partir de sus precios diarios
 # FORMULA      el agregador de AGREGADORES: avg(), median() o exp(avg(ln()))
 # POR QUE ASI  el default es avg() porque es la formula del INDEC para

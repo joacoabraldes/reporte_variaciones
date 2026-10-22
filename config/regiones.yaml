@@ -11,11 +11,11 @@
 # no es un detalle menor: sin poder separarlas, el indice regional no se puede
 # comparar contra el del INDEC.
 #
-# PROBLEMA ABIERTO: staged/observaciones del repo de captura tiene `provincia`
-# pero no `localidad` ni codigo postal. Para resolver Buenos Aires hace falta
-# agregar alla una dimension de sucursales. Hasta entonces, las sucursales
-# bonaerenses caen en `INDETERMINADA` y hay que decidir si se excluyen o se
-# imputan a Pampeana.
+# RESUELTO el 21/10/2026: captura publica `staged/sucursales/` con el
+# departamento (partido) de cada sucursal, que saca del API georef del Estado por
+# sus coordenadas (`precios.cli publicar-sucursales`). Que partido es GBA lo
+# decide este repo, con `partidos_gba_ids`. Una sucursal bonaerense sin partido
+# no se adivina: queda sin region (ver `reporte.regiones.region_de_sucursal`).
 
 version: 1
 
@@ -46,8 +46,46 @@ provincias:
   Santa Cruz:             Patagonia
   Tierra del Fuego:       Patagonia
 
-# Los 24 partidos que el INDEC cuenta como GBA. Una sucursal de la provincia de
-# Buenos Aires cuya localidad este en esta lista va a GBA; el resto, a Pampeana.
+# Codigo de provincia de georef (el del INDEC) -> nombre como lo escribe SEPA.
+# Sirve para las sucursales que SEPA trae con provincia DESCONOCIDA (67 de 3.021
+# el 21/10/2026): la provincia sale de sus coordenadas. Verificado contra
+# apis.datos.gob.ar/georef/api/provincias el 21/10/2026.
+provincia_por_id:
+  "02": CABA
+  "06": Buenos Aires
+  "10": Catamarca
+  "14": Córdoba
+  "18": Corrientes
+  "22": Chaco
+  "26": Chubut
+  "30": Entre Ríos
+  "34": Formosa
+  "38": Jujuy
+  "42": La Pampa
+  "46": La Rioja
+  "50": Mendoza
+  "54": Misiones
+  "58": Neuquén
+  "62": Río Negro
+  "66": Salta
+  "70": San Juan
+  "74": San Luis
+  "78": Santa Cruz
+  "82": Santa Fe
+  "86": Santiago del Estero
+  "90": Tucumán
+  "94": Tierra del Fuego
+
+# Los 24 partidos del GBA, por su codigo de departamento en georef. Los codigos
+# y no los nombres: los nombres tienen tildes y variantes ("Gral. San Martin").
+# Cada uno verificado contra apis.datos.gob.ar/georef/api/departamentos el
+# 21/10/2026, en el orden de la lista de nombres de abajo.
+partidos_gba_ids: ["06028", "06035", "06091", "06260", "06270", "06274", "06371",
+                   "06408", "06410", "06412", "06427", "06434", "06490", "06515",
+                   "06539", "06560", "06568", "06658", "06749", "06756", "06760",
+                   "06805", "06840", "06861"]
+
+# Los mismos 24 por nombre, para leer. El calculo usa los ids.
 partidos_gba:
   - Almirante Brown
   - Avellaneda

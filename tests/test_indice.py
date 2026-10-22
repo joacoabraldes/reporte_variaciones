@@ -23,6 +23,7 @@ from reporte.agregacion import (
     variacion_interanual,
 )
 from reporte.elemental import (
+    MOTIVO_OUTLIER_MAD,
     MOTIVO_OUTLIER_TOPE,
     MOTIVO_SIN_ACTUAL,
     MOTIVO_SIN_BASE,
@@ -159,6 +160,66 @@ def test_el_mad_cero_no_manda_todo_a_cuarentena():
     assert r.umbral_usado in ("iqr", "solo_tope_absoluto")
 
 
+def test_un_precio_que_no_cambio_nunca_es_un_valor_raro():
+    """El caso de la carne picada de DIA en septiembre 2026.
+
+    20 precios bajan alrededor de 15% (x0,84, x0,85, x0,86) y 10 no se mueven.
+    Como casi todo bajo, la mediana queda en -15% y los quietos parecen raros:
+    el MAD los mandaba a cuarentena, y la categoria daba -15% en vez de -10%.
+    El filtro esta para cazar errores de tipeo, y un precio igual al del mes
+    anterior no puede ser uno. Entran los 30:
+
+        exp( (7 ln 0,84 + 7 ln 0,85 + 6 ln 0,86 + 10 ln 1) / 30 )
+    """
+    factores = [0.84, 0.85, 0.86]
+    base = {q(i): 1000.0 for i in range(30)}
+    actual = {q(i): 1000.0 * factores[i % 3] for i in range(20)}
+    actual.update({q(i): 1000.0 for i in range(20, 30)})
+
+    r = indice_elemental("cat", base, actual)
+
+    esperado = math.exp(
+        (7 * math.log(0.84) + 7 * math.log(0.85) + 6 * math.log(0.86)) / 30
+    )
+    assert r.n_quotes == 30, f"se descartaron {r.n_descartados} precios que no cambiaron"
+    assert r.indice == pytest.approx(esperado)
+
+
+def test_no_cambio_aunque_el_promedio_difiera_en_el_ultimo_bit():
+    """El mismo precio con centavos, promediado sobre 31 y sobre 30 dias.
+
+    Pasa con el 7% de los precios entre $1.000 y $3.000 con centavos: con una
+    comparacion exacta, esos precios quietos volverian a parecer movidos.
+    """
+    precio = 1000.04
+    agosto = sum([precio] * 31) / 31
+    septiembre = sum([precio] * 30) / 30
+    assert agosto != septiembre, "el escenario no reproduce la diferencia de un bit"
+    factores = [0.84, 0.85, 0.86]
+    base = {q(i): 1000.0 for i in range(20)}
+    actual = {q(i): 1000.0 * factores[i % 3] for i in range(20)}
+    base.update({q(i): agosto for i in range(20, 30)})
+    actual.update({q(i): septiembre for i in range(20, 30)})
+
+    assert indice_elemental("cat", base, actual).n_quotes == 30
+
+
+def test_un_salto_que_no_llega_al_tope_lo_sigue_cazando_el_mad():
+    """Regresion del arreglo de arriba: el MAD sigue sirviendo para lo que esta.
+
+    Precios que suben 0%, 1% y 2%, y uno que salta x1,8: no llega al tope de x2,
+    pero esta a decenas de MAD de la mediana.
+    """
+    base = {q(i): 100.0 for i in range(40)}
+    actual = {q(i): 100.0 * (1.00, 1.01, 1.02)[i % 3] for i in range(40)}
+    actual[q(1)] = 180.0
+
+    r = indice_elemental("cat", base, actual)
+
+    assert any(d.quote == q(1) and d.motivo == MOTIVO_OUTLIER_MAD for d in r.descartes)
+    assert r.n_quotes == 39
+
+
 def test_con_pocos_quotes_no_se_aplica_el_mad():
     """La dispersion de 5 observaciones no es informativa."""
     base = {q(i): 100.0 for i in range(5)}
@@ -190,7 +251,7 @@ def test_los_outliers_se_miden_sobre_log_ratio_y_son_simetricos():
 
 
 # --------------------------------------------------------------------------- #
-# CRITICO 5 de 8: categorias elementales -> clases COICOP
+# CRITICO 5 de 9: categorias elementales -> clases COICOP
 #
 # Era la unica de las ocho operaciones criticas sin un solo test, y es donde se
 # perdian categorias en silencio. Los numeros de abajo estan hechos a mano.
@@ -454,9 +515,65 @@ def test_los_factores_reales_son_todos_mayores_a_uno():
     from reporte.ponderadores import factores_actualizacion
 
     f = factores_actualizacion("nacional")
-    assert set(f) == {"01.1.1", "01.1.4", "01.1.5", "01.1.8", "01.1.9", "01.2.1"}
+    # Las 11 clases de la division alimentos (las 6 del piloto mas carnes,
+    # pescados, frutas, verduras y aguas/gaseosas/jugos, 10/2026), ropa y
+    # calzado, y desde el 21/10 el resto de lo online y los combustibles.
+    assert set(f) == {
+        "01.1.1", "01.1.2", "01.1.3", "01.1.4", "01.1.5", "01.1.6", "01.1.7",
+        "01.1.8", "01.1.9", "01.2.1", "01.2.2", "03.1.2", "03.2.1",
+        "04.3.1", "05.1", "05.3", "05.5", "06.1.1", "06.1.2", "07.2.2",
+        "09.1.1", "09.1.3", "09.3.4", "12.1.3",
+    }
     # Base diciembre 2016 = 100 y desde entonces los precios subieron mucho.
     assert all(v > 50 for v in f.values()), f
+
+
+@pytest.mark.parametrize(
+    "region", ["GBA", "Pampeana", "Noroeste", "Noreste", "Cuyo", "Patagonia"]
+)
+def test_los_factores_salen_en_las_seis_regiones(region):
+    """El INDEC escribe distinto la misma serie segun la region.
+
+    01.1.8 es "etc," en GBA y "etc." en las otras cinco. Con un solo nombre por
+    clase, el calculo cortaba en cinco de las seis regiones; el nacional no se
+    enteraba porque usa la serie de GBA.
+    """
+    from reporte.ponderadores import factores_actualizacion
+
+    f = factores_actualizacion(region)
+    assert len(f) == 24
+    assert all(v > 50 for v in f.values()), f
+
+
+def test_una_lista_de_aperturas_toma_la_que_existe(tmp_path):
+    import yaml
+
+    from reporte.ponderadores import factores_actualizacion
+
+    mapeo = tmp_path / "indices.yaml"
+    mapeo.write_text(
+        yaml.safe_dump(
+            {"clases": {"01.1.1": {"apertura": ["Nombre Que No Esta", "Pan y cereales"]}}},
+            allow_unicode=True,
+        ),
+        encoding="utf-8",
+    )
+    assert set(factores_actualizacion("GBA", path_mapeo=mapeo)) == {"01.1.1"}
+
+
+def test_una_lista_sin_ninguna_apertura_valida_falla_claro(tmp_path):
+    """La lista no afloja el control: si ninguno de los nombres esta, corta."""
+    import yaml
+
+    from reporte.ponderadores import factores_actualizacion
+
+    mapeo = tmp_path / "indices.yaml"
+    mapeo.write_text(
+        yaml.safe_dump({"clases": {"01.1.1": {"apertura": ["No Existe", "Tampoco"]}}}),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="no esta"):
+        factores_actualizacion("GBA", path_mapeo=mapeo)
 
 
 def test_una_apertura_inexistente_falla_claro(tmp_path):

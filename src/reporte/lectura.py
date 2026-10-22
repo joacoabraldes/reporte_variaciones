@@ -30,6 +30,7 @@ from __future__ import annotations
 import dataclasses
 import hashlib
 import logging
+import os
 import re
 import shutil
 import tempfile
@@ -48,9 +49,46 @@ PREFIJO_CLASIFICACION = "staged/clasificacion"
 PREFIJO_COMERCIOS_EXCLUIDOS = "staged/comercios_excluidos"
 PREFIJO_QUOTES_MENSUALES = "staged/quotes_mensuales"
 PREFIJO_CATALOGO = "staged/catalogo_productos"
+# Las fuentes que no son SEPA (etapa 5 del repo de captura).
+PREFIJO_RELEVAMIENTO_ONLINE = "staged/relevamiento_online"
+PREFIJO_CLASIFICACION_ONLINE = "staged/clasificacion_online"
+PREFIJO_COMBUSTIBLES = "staged/combustibles"
+PREFIJO_SUCURSALES = "staged/sucursales"
+
+# El contrato con captura (`precios.geo.georef.COLUMNAS` alla): escrito literal
+# de los dos lados, y cada lado tiene un test que lo fija.
+COLUMNAS_SUCURSALES = ("id_comercio", "id_sucursal", "provincia", "provincia_id",
+                       "departamento_id", "departamento", "latitud", "longitud")
+
+
+def leer_sucursales(rutas: list) -> list[dict]:
+    """Las filas de `staged/sucursales/`, cortando si falta una columna del contrato.
+
+    Si captura cambia la tabla sin avisar, se ve aca y no en un numero raro
+    tres pasos despues.
+    """
+    con = duckdb.connect()
+    try:
+        rel = con.sql("SELECT * FROM read_parquet(["
+                      + _sql_lista(Path(r).as_posix() for r in rutas) + "])")
+        faltan = [c for c in COLUMNAS_SUCURSALES if c not in rel.columns]
+        if faltan:
+            raise ValueError(
+                f"staged/sucursales no tiene las columnas {faltan}: el contrato "
+                f"con captura es {COLUMNAS_SUCURSALES}"
+            )
+        filas = rel.project(", ".join(COLUMNAS_SUCURSALES)).fetchall()
+    finally:
+        con.close()
+    return [dict(zip(COLUMNAS_SUCURSALES, f)) for f in filas]
 
 RAIZ_REPO = Path(__file__).resolve().parents[2]
 CACHE_DEFAULT = RAIZ_REPO / ".cache"
+
+# Tope de DuckDB. Se pisa con PRECIOS_MEMORIA_DUCKDB y PRECIOS_HILOS_DUCKDB, las
+# mismas variables que usa el repo de captura. Ver `_conectar`.
+MEMORIA_DEFAULT = "4GB"
+HILOS_DEFAULT = 4
 
 # `staged/observaciones/anio=2026/mes=08/dia=17/sepa_1_comercio-sepa-4_...parquet`
 RE_PARTICION = re.compile(r"anio=(\d{4})/mes=(\d{2})/dia=(\d{2})")
@@ -223,6 +261,17 @@ class LectorBucket:
     def _listar(self, prefijo: str) -> list:
         return list(self.cliente.list_blobs(self.bucket_nombre, prefix=prefijo))
 
+    def _listar_carpeta(self, prefijo: str) -> list:
+        """Lo que esta DENTRO de una carpeta del bucket, con la barra al final.
+
+        GCS no tiene carpetas: el prefijo es texto. Sin la barra,
+        "staged/clasificacion" tambien trae "staged/clasificacion_online/...",
+        y el 20/10/2026 eso hizo que la clasificacion de SEPA se leyera mezclada
+        con la online (cortó por esquema distinto; con el mismo esquema se
+        habria mezclado en silencio).
+        """
+        return self._listar(prefijo.rstrip("/") + "/")
+
     def inventario(
         self,
         desde: date,
@@ -367,7 +416,7 @@ class LectorBucket:
         destino.mkdir(parents=True, exist_ok=True)
         bucket = self.cliente.bucket(self.bucket_nombre)
         locales: list[str] = []
-        for blob in self._listar(prefijo):
+        for blob in self._listar_carpeta(prefijo):
             if not blob.name.endswith(".parquet"):
                 continue
             local = destino / f"{blob.generation}_{Path(blob.name).name}"
@@ -379,6 +428,62 @@ class LectorBucket:
                 f"no hay nada en gs://{self.bucket_nombre}/{prefijo}"
             )
         return locales
+
+    def sucursales(self) -> list[dict]:
+        """Provincia y departamento de cada sucursal (`staged/sucursales/`).
+
+        La publica el repo de captura (`precios.cli publicar-sucursales`). La
+        region de cada una la decide `reporte.regiones`.
+        """
+        return leer_sucursales(self._bajar_prefijo(PREFIJO_SUCURSALES, "sucursales"))
+
+    def clasificacion_online(self) -> list[tuple]:
+        """`(sitio, item_id, categoria, clase, articulo_engho)` de cada articulo online.
+
+        La publica el repo de captura (`precios.cli publicar-clasificacion-online`).
+        """
+        rutas = self._bajar_prefijo(PREFIJO_CLASIFICACION_ONLINE, "clasificacion_online")
+        return self._con.sql(
+            "SELECT sitio, item_id, categoria, clase, articulo_engho "
+            f"FROM read_parquet([{_sql_lista(rutas)}])"
+        ).fetchall()
+
+    def bajar_fotos_online(self) -> Path:
+        """Baja al cache las fotos online que falten y devuelve la carpeta.
+
+        Deja `sitio=X/fecha=Y/datos.json`, el mismo arbol que el repo de captura,
+        que es lo que lee `online_indice.cargar_fotos`. Una foto no cambia
+        despues de publicada (captura nunca la pisa), asi que la que ya esta en
+        el cache no se vuelve a bajar.
+        """
+        return self._bajar_fotos(
+            PREFIJO_RELEVAMIENTO_ONLINE, "datos.json",
+            self.cache / "etapa5" / "datos_online",
+        )
+
+    def bajar_fotos_combustibles(self) -> Path:
+        """Lo mismo para las fotos diarias del surtidor: `fecha=Y/vigentes.csv`.
+
+        Es el arbol que lee `online_indice.cargar_combustibles` y el mismo que
+        usa `scripts/variacion_online.py --combustibles`.
+        """
+        return self._bajar_fotos(
+            PREFIJO_COMBUSTIBLES, "vigentes.csv",
+            self.cache / "etapa5" / "datos_oficiales" / "combustibles",
+        )
+
+    def _bajar_fotos(self, prefijo: str, archivo: str, destino: Path) -> Path:
+        bucket = self.cliente.bucket(self.bucket_nombre)
+        base = prefijo.rstrip("/") + "/"
+        for blob in self._listar_carpeta(prefijo):
+            if not blob.name.endswith(archivo):
+                continue
+            local = destino / blob.name[len(base):]
+            if local.exists():
+                continue
+            local.parent.mkdir(parents=True, exist_ok=True)
+            bucket.blob(blob.name).download_to_filename(str(local))
+        return destino
 
     def clasificacion(self) -> duckdb.DuckDBPyRelation:
         """`id_producto -> categoria -> clase COICOP`.
@@ -435,6 +540,13 @@ def _conectar(cache: Path) -> duckdb.DuckDBPyConnection:
     tmp = cache / "duckdb_tmp"
     tmp.mkdir(parents=True, exist_ok=True)
     con.execute(f"SET temp_directory='{tmp.as_posix()}'")
+    # Sin tope, DuckDB toma el 80% de la RAM y compite con todo lo demas abierto:
+    # el 20/10/2026 el recalculo de agosto->septiembre murio con "Out of Memory
+    # Error: Allocation failure" y se llevo puesto el editor 39 segundos antes.
+    # Con un tope explicito derrama a disco antes y se pone lento en vez de
+    # morir. Mismas variables y mismos defaults que el repo de captura.
+    con.execute(f"SET memory_limit='{os.environ.get('PRECIOS_MEMORIA_DUCKDB', MEMORIA_DEFAULT)}'")
+    con.execute(f"SET threads={int(os.environ.get('PRECIOS_HILOS_DUCKDB', HILOS_DEFAULT))}")
     # No hace falta conservar el orden de las filas y ahorra memoria en los
     # scans grandes.
     con.execute("SET preserve_insertion_order=false")
