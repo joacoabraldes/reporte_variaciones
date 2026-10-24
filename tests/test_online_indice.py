@@ -28,6 +28,9 @@ CLASIF = clasificacion_por_item([
 ])
 
 
+NOV = (date(2026, 11, 1), date(2026, 11, 30))
+
+
 def _mes(anio, mes, dias, precios):
     """`dias` fotos diarias desde el 1, con el mismo precio por item."""
     return {date(anio, mes, 1) + timedelta(d): dict(precios) for d in range(dias)}
@@ -36,7 +39,7 @@ def _mes(anio, mes, dias, precios):
 def test_quotes_del_mes_agrupados_por_articulo():
     fotos = _mes(2026, 11, 25, {("tascani", "1"): 100.0, ("legacy", "9"): 200.0,
                                 ("topper", "5"): 50.0})
-    q = quotes_por_articulo(fotos, CLASIF, "2026-11", minimo_dias=20)
+    q = quotes_por_articulo(fotos, CLASIF, NOV[0], NOV[1], minimo_dias=20)
     assert q == {
         "A0312103": {("tascani", "1"): 100.0, ("legacy", "9"): 200.0},
         "A0321107": {("topper", "5"): 50.0},
@@ -54,7 +57,7 @@ def test_por_categoria_reagrupa_los_mismos_quotes():
 
 def test_un_item_sin_clasificar_no_entra():
     fotos = _mes(2026, 11, 25, {("tascani", "1"): 100.0, ("tascani", "777"): 10.0})
-    q = quotes_por_articulo(fotos, CLASIF, "2026-11", minimo_dias=20)
+    q = quotes_por_articulo(fotos, CLASIF, NOV[0], NOV[1], minimo_dias=20)
     assert ("tascani", "777") not in q.get("A0312103", {})
 
 
@@ -62,7 +65,23 @@ def test_octubre_no_alcanza_el_minimo_de_dias():
     """Las fotos arrancaron el 14/10: 18 dias como mucho, contra 20 minimos."""
     fotos = {date(2026, 10, 14) + timedelta(d): {("tascani", "1"): 100.0}
              for d in range(18)}
-    assert quotes_por_articulo(fotos, CLASIF, "2026-10", minimo_dias=20) == {}
+    assert quotes_por_articulo(fotos, CLASIF, date(2026, 10, 1), date(2026, 10, 31), minimo_dias=20) == {}
+
+
+def test_por_semana_alcanzan_cinco_dias_de_fotos():
+    """La primera semana con rubros online: 19 al 25/10 contra 12 al 18/10.
+
+    Las fotos arrancaron el miercoles 14: la semana del 12 tiene 5 dias (14 a
+    18) y alcanza el minimo semanal. Un articulo que falto un dia queda afuera.
+    """
+    fotos = {date(2026, 10, 14) + timedelta(d): {("tascani", "1"): 100.0, ("legacy", "9"): 200.0}
+             for d in range(12)}
+    del fotos[date(2026, 10, 16)][("legacy", "9")]
+
+    semana = quotes_por_articulo(fotos, CLASIF, date(2026, 10, 12), date(2026, 10, 18),
+                                 minimo_dias=5)
+
+    assert semana == {"A0312103": {("tascani", "1"): 100.0}}
 
 
 def test_sumar_no_pisa_y_suma_articulos_nuevos():
@@ -204,8 +223,8 @@ def test_el_surtidor_entra_por_el_mismo_precio_del_mes(tmp_path):
     fotos, categoria = cargar_combustibles(tmp_path)
     clasif = {k: (c, "07.2.2", "A0722102") for k, c in categoria.items()}
 
-    nov = quotes_por_articulo(fotos, clasif, "2026-11", minimo_dias=20)
-    dic = quotes_por_articulo(fotos, clasif, "2026-12", minimo_dias=20)
+    nov = quotes_por_articulo(fotos, clasif, *NOV, minimo_dias=20)
+    dic = quotes_por_articulo(fotos, clasif, date(2026, 12, 1), date(2026, 12, 31), minimo_dias=20)
 
     assert nov == {"A0722102": {("surtidor", "1376", "2"): pytest.approx(1050.0)}}
     assert dic == {"A0722102": {("surtidor", "1376", "2"): pytest.approx(1155.0)}}

@@ -13,6 +13,7 @@ import pytest
 
 from reporte.agregacion import (
     MODO_CRUDO,
+    agregados_por_division,
     agregar,
     clases_desde_categorias,
     clases_sin_ponderador,
@@ -340,6 +341,31 @@ def test_renormaliza_cuando_los_pesos_no_suman_uno():
     assert ind == pytest.approx(1.10), "sin renormalizar daria 0.0405*1.10 = 0.045"
     assert cubierto == pytest.approx(0.0405)
     assert total == pytest.approx(0.1103)
+
+
+def test_los_rubros_son_las_divisiones_del_indec():
+    """Juan (22/10/2026): rubros separados y uno global. El rubro es la division.
+
+    Alimentos: pan +2% con peso 0,3 y carnes +4% con peso 0,1
+        -> (0,3 x 1,02 + 0,1 x 1,04) / 0,4 = 1,025
+    Equipamiento: 05.3 +10% sola (05.1 tiene peso y no dato: no entra)
+    """
+    indices = {"01.1.1": 1.02, "01.1.2": 1.04, "05.3": 1.10}
+    pesos = {"01.1.1": 0.3, "01.1.2": 0.1, "05.3": 0.02, "05.1": 0.01}
+
+    rubros = agregados_por_division(indices, pesos)
+
+    assert set(rubros) == {"01", "05"}
+    assert rubros["01"].indice == pytest.approx(1.025)
+    assert rubros["05"].indice == pytest.approx(1.10)
+    assert rubros["05"].cobertura == pytest.approx(0.02 / 0.03)
+
+
+def test_un_rubro_sin_ninguna_clase_con_dato_no_tiene_indice():
+    """Hasta noviembre no hay dos meses de fotos: Salud tiene peso y no dato."""
+    rubros = agregados_por_division({"01.1.1": 1.02}, {"01.1.1": 0.3, "06.1.1": 0.04})
+    assert rubros["01"].indice == pytest.approx(1.02)
+    assert rubros["06"].indice is None
 
 
 def test_sin_renormalizar_el_numero_no_es_interpretable():

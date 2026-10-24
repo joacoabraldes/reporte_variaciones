@@ -141,6 +141,32 @@ def agregar(
     )
 
 
+def division(clase: str) -> str:
+    """La division COICOP de una clase del indice: `"05.3" -> "05"`."""
+    return clase.split(".")[0]
+
+
+def agregados_por_division(
+    indices_clase: dict[str, float], pesos_universo: dict[str, float]
+) -> dict[str, ResultadoAgregado]:
+    """Un Laspeyres por division: los rubros que se informan al lado del global.
+
+    Es la operacion 7 aplicada a cada division por separado, con el mismo
+    renormalizado: una clase con peso y sin dato no entra, y la cobertura dice
+    que fraccion del peso de la division tiene dato. Una division sin ninguna
+    clase con dato sale con `indice=None` (lo online, hasta noviembre).
+    """
+    por_division: dict[str, dict[str, float]] = defaultdict(dict)
+    for clase, peso in pesos_universo.items():
+        por_division[division(clase)][clase] = peso
+    return {
+        div: agregar(
+            div, div, {c: indices_clase[c] for c in pesos if c in indices_clase}, pesos
+        )
+        for div, pesos in sorted(por_division.items())
+    }
+
+
 @dataclasses.dataclass(slots=True)
 class ClasesDesdeCategorias:
     """Lo que entro a cada clase, y lo que quedo afuera.

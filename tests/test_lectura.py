@@ -277,6 +277,26 @@ def test_baja_las_fotos_de_combustibles_al_mismo_arbol_que_captura(tmp_path):
     assert not (raiz / "fecha=2026-11-03" / "notas.txt").exists()
 
 
+def test_las_planillas_del_indec_son_la_ultima_copia_de_cada_una(tmp_path):
+    """Captura no guarda una copia igual a la anterior, asi que cada planilla
+    puede tener su ultima version en una fecha distinta."""
+    nombres = [
+        "staged/indec/fecha=2026-10-21/sh_ipc_aperturas.xls",
+        "staged/indec/fecha=2026-10-21/sh_ipc_precios_promedio.xls",
+        "staged/indec/fecha=2026-11-13/sh_ipc_aperturas.xls",
+    ]
+    lector = LectorBucket(cache=tmp_path, cliente=_ClienteFalso(nombres))
+
+    planillas = lector.bajar_planillas_indec()
+
+    raiz = tmp_path / "etapa5" / "indec"
+    assert planillas == {
+        "sh_ipc_aperturas.xls": raiz / "fecha=2026-11-13" / "sh_ipc_aperturas.xls",
+        "sh_ipc_precios_promedio.xls": raiz / "fecha=2026-10-21" / "sh_ipc_precios_promedio.xls",
+    }
+    assert all(p.exists() for p in planillas.values())
+
+
 def test_una_foto_ya_bajada_no_se_vuelve_a_bajar(tmp_path):
     """Captura nunca pisa una foto publicada: la del cache es la misma."""
     foto = tmp_path / "etapa5" / "datos_oficiales" / "combustibles" / "fecha=2026-11-03" / "vigentes.csv"

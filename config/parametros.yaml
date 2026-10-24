@@ -1,15 +1,16 @@
 # Parametros del calculo que dependen de la VENTANA TEMPORAL.
 #
-# El metodo es identico para semanas y para meses: mediana por quote, muestra
-# emparejada, Jevons abajo, Laspeyres arriba, encadenamiento. Lo unico que
-# cambia son estos numeros, y por eso viven aca y no como constantes en el
-# codigo: cambiar la ventana no puede requerir tocar el calculo.
+# El metodo es identico para semanas y para meses: precio de la ventana por
+# quote (la media, `--agregador`), muestra emparejada, Jevons abajo, Laspeyres
+# arriba, encadenamiento. Lo unico que cambia son estos numeros, y por eso viven
+# aca y no como constantes en el codigo: cambiar la ventana no puede requerir
+# tocar el calculo.
 #
-# El indice semanal es DIAGNOSTICO INTERNO. No va a la API ni a ningun
-# dashboard: sirve para ver como se comporta el pipeline antes de que haya dos
-# meses cerrados. Semanal y mensual son dos series paralelas, cada una calculada
-# desde las observaciones diarias. El mensual NO se deriva encadenando semanas:
-# son muestras emparejadas distintas y el resultado no seria el mismo numero.
+# El indice semanal es PRELIMINAR: va al dashboard (pedido de Juan, 22/10/2026)
+# para leer la semana cerrada antes de que cierre el mes, pero no es el numero.
+# Semanal y mensual son dos series paralelas, cada una calculada desde las
+# observaciones diarias. El mensual NO se deriva encadenando semanas: son
+# muestras emparejadas distintas y el resultado no seria el mismo numero.
 
 version: 1
 

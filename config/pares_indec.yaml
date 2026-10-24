@@ -1,0 +1,56 @@
+# Nuestro articulo ENGHo -> el producto que el INDEC publica con precio promedio.
+#
+# PARA QUE SIRVE
+# El INDEC publica todos los meses el precio promedio de ~60 productos en GBA
+# (sh_ipc_precios_promedio.xls, hoja "GBA"). Los que tienen par con un articulo
+# nuestro permiten comparar producto por producto, que son 32 puntos y no uno:
+# un umbral del filtro, una cadena que pesa de mas o un producto mal medido se
+# ven aca antes que en el agregado (ver reporte.contra_indec).
+#
+# OJO: nuestro articulo es nacional y el precio promedio del INDEC es de GBA. Y
+# el producto del INDEC es una especificacion fija ("Aceite de girasol, botella
+# de 1,5 litros"); nuestro articulo junta todas las presentaciones. Sirve para
+# ver en que direccion y por cuanto nos alejamos, no para exigir el mismo numero.
+#
+# Los nombres son EXACTOS, como estan en la planilla. Armado el 21/10/2026.
+
+version: 1
+
+pares:
+  # --- verduras y frutas
+  A0117126: Tomate redondo
+  A0117110: Cebolla
+  A0117119: Papa
+  A0117117: Lechuga
+  A0117131: Zapallo anco
+  A0117310: Tomate entero en conserva
+  A0116111: Manzana deliciosa
+  A0116109: Limón
+  A0116113: Naranja
+  A0116102: Banana
+  # --- carnes y pescados
+  A0112108: Carne picada común
+  A0112102: Asado
+  A0112117: Paleta
+  A0112110: Cuadril
+  A0112116: Nalga
+  A0112504: Salchicha tipo viena
+  A0112508: Jamón cocido
+  A0113103: Filet de merluza fresco
+  # --- lacteos, huevos, aceites
+  A0114101: Leche fresca entera en sachet
+  A0114401: Huevos de gallina
+  A0115301: Manteca
+  A0114304: Dulce de leche
+  A0115102: Aceite de girasol
+  # --- almacen
+  A0118101: Azúcar
+  A0119101: Sal fina
+  A0111201: Arroz blanco simple
+  A0111304: Fideos secos tipo guisero
+  A0111210: Harina de trigo común 000
+  A0111105: Galletitas dulces envasadas sin relleno
+  # --- bebidas
+  A0122201: Gaseosa base cola
+  A0122101: Agua sin gas
+  A0121301: Yerba mate

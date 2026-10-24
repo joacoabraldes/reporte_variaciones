@@ -1,0 +1,413 @@
+<style>
+  .ip { display: grid; gap: var(--cds-gap-lg); font-family: var(--font-anthropic-sans); font-variant-numeric: tabular-nums; }
+  .ip-head { display: grid; gap: var(--cds-gap-xs); }
+  .ip-title-row { display: flex; flex-wrap: wrap; align-items: baseline; gap: var(--cds-gap-sm); }
+  .ip-title { margin: 0; font-family: var(--font-anthropic-serif); font-weight: 400; font-size: var(--cds-font-size-title); }
+  .ip-badge { font-size: var(--cds-font-size-caption); color: var(--color-warn); border: 1px solid var(--color-border-line); border-radius: var(--cds-radius); padding: 0 var(--cds-pad-xs); }
+  .ip-take { margin: 0; color: var(--color-fg); max-width: 70ch; }
+  .ip-note { margin: 0; font-size: var(--cds-font-size-caption); color: var(--color-fg-muted); max-width: 80ch; }
+  .ip-controls { display: flex; flex-wrap: wrap; gap: var(--cds-gap-sm); align-items: center; }
+  .ip-seg { display: inline-flex; border: 1px solid var(--color-border-line); border-radius: var(--cds-radius); overflow: hidden; }
+  .ip-seg button { font: inherit; background: var(--color-panel); color: var(--color-fg); border: 0; padding: var(--cds-pad-xs) var(--cds-pad-md); cursor: pointer; }
+  .ip-seg button[aria-pressed="true"] { background: var(--color-fg); color: var(--color-bg); }
+  .ip-seg button:focus-visible, .ip-card:focus-visible, .ip-select:focus-visible { outline: 2px solid var(--color-fg); outline-offset: 2px; }
+  .ip-select { font: inherit; padding: var(--cds-pad-xs) var(--cds-pad-sm); border: 1px solid var(--color-border-line); border-radius: var(--cds-radius); background: var(--color-panel); color: var(--color-fg); max-width: 100%; }
+  .ip-section { display: grid; gap: var(--cds-gap-sm); }
+  .ip-h2 { margin: 0; font-size: var(--cds-font-size-heading); font-weight: var(--cds-font-weight-medium); }
+  .ip-kpis { display: grid; gap: var(--cds-gap-md); grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr)); }
+  .ip-box { background: var(--color-panel); border: 1px solid var(--color-border-line); border-radius: var(--cds-radius); padding: var(--cds-pad-lg); display: grid; gap: var(--cds-gap-xs); align-content: start; min-width: 0; }
+  .ip-label { margin: 0; font-size: var(--cds-font-size-body); font-weight: var(--cds-font-weight-medium); }
+  .ip-sub { margin: 0; font-size: var(--cds-font-size-caption); color: var(--color-fg-muted); }
+  .ip-big { font-family: var(--font-anthropic-serif); font-weight: 400; font-size: var(--cds-font-size-title); line-height: 1.1; min-height: 1.2em; }
+  .ip-sindato { color: var(--color-fg-muted); font-family: var(--font-anthropic-sans); font-size: var(--cds-font-size-body); }
+  .ip-grid { display: grid; gap: var(--cds-gap-md); grid-template-columns: repeat(auto-fill, minmax(min(100%, 15rem), 1fr)); }
+  .ip-card { text-align: left; font: inherit; color: inherit; cursor: pointer; }
+  .ip-card[aria-pressed="true"] { border-color: var(--color-fg); box-shadow: inset 0 0 0 1px var(--color-fg); }
+  .ip-card .ip-big { font-size: var(--cds-font-size-heading); }
+  .ip-table-wrap { overflow-x: auto; }
+  .ip-table { width: 100%; border-collapse: collapse; font-size: var(--cds-font-size-body); }
+  .ip-table th, .ip-table td { text-align: left; padding: var(--cds-pad-xs) var(--cds-pad-sm); border-bottom: 1px solid var(--color-border-line); }
+  .ip-table th { font-weight: var(--cds-font-weight-medium); color: var(--color-fg-muted); font-size: var(--cds-font-size-caption); }
+  .ip-table td.ip-num, .ip-table th.ip-num { text-align: right; white-space: nowrap; }
+  .ip-chart { position: relative; min-height: 260px; }
+  .ip-tip { position: absolute; pointer-events: none; background: var(--cds-surface-popover); border: 1px solid var(--cds-border); border-radius: var(--cds-radius); box-shadow: var(--cds-shadow-popover); padding: var(--cds-pad-xs) var(--cds-pad-sm); font-size: var(--cds-font-size-caption); white-space: nowrap; }
+  .ip-tip-when { color: var(--cds-text-secondary); }
+  .ip-sw { display: inline-block; width: 0.6rem; height: 0.6rem; border-radius: 50%; margin-right: 0.35rem; }
+  [data-dash-source-state=refreshing] { opacity: .5; transition: opacity var(--cds-dur-slow); }
+</style>
+
+<div class="ip">
+  <header class="ip-head" id="resumen">
+    <div class="ip-title-row">
+      <h1 class="ip-title">Índice de precios</h1>
+      <span class="ip-badge">Preliminar</span>
+    </div>
+    <p class="ip-take ip-take-js"></p>
+    <p class="ip-note">El INDEC no publica un índice semanal, y el mes no se arma encadenando semanas: cada mes se calcula con sus propios precios. Cada período muestra su cálculo más reciente; los anteriores quedan guardados.</p>
+  </header>
+
+  <div class="ip-controls">
+    <div class="ip-seg" role="group" aria-label="Ventana">
+      <button type="button" data-v="semanal" id="ventana-semanal">Semanas</button>
+      <button type="button" data-v="mensual" id="ventana-mensual">Meses</button>
+    </div>
+    <select class="ip-select ip-periodo" id="periodo" aria-label="Período" data-source="periodos"></select>
+  </div>
+
+  <section class="ip-section" id="numeros">
+    <h2 class="ip-h2">Los dos números</h2>
+    <div class="ip-kpis">
+      <article class="ip-box" id="kpi-global">
+        <p class="ip-label">Global</p>
+        <p class="ip-sub">SEPA, tiendas online y surtidor</p>
+        <div class="ip-big dash-skeleton" data-source="periodos" data-field="variacion_pct"></div>
+        <p class="ip-sub">mide <span data-source="periodos" data-field="cobertura_ipc_pct"></span> del IPC</p>
+      </article>
+      <article class="ip-box" id="kpi-sin-online">
+        <p class="ip-label">Sin online</p>
+        <p class="ip-sub">sólo SEPA, recalculado con sus precios</p>
+        <div class="ip-big dash-skeleton" data-source="periodos" data-field="variacion_pct"></div>
+        <p class="ip-sub">mide <span data-source="periodos" data-field="cobertura_ipc_pct"></span> del IPC</p>
+      </article>
+      <article class="ip-box" id="kpi-por-region" hidden>
+        <p class="ip-label">Por región</p>
+        <p class="ip-sub">cada región y después el nacional, como el INDEC</p>
+        <div class="ip-big" data-source="periodos" data-field="variacion_pct"></div>
+        <p class="ip-sub">mide <span data-source="periodos" data-field="cobertura_ipc_pct"></span> del IPC</p>
+      </article>
+    </div>
+    <p class="ip-note ip-calculado"></p>
+  </section>
+
+  <section class="ip-section" id="rubros">
+    <h2 class="ip-h2">Rubros</h2>
+    <p class="ip-note">Uno por división del INDEC. "De la división" dice cuánto de esa división medimos: un rubro que mide poco no es la división del INDEC. Tocá uno para ver sus clases.</p>
+    <div class="ip-grid ip-rubros" data-source="periodos"></div>
+  </section>
+
+  <section class="ip-section" id="detalle">
+    <h2 class="ip-h2 ip-detalle-titulo">Clases del rubro</h2>
+    <div class="ip-box">
+      <p class="ip-label">Variación de cada clase</p>
+      <p class="ip-sub">El rubro es el promedio de sus clases, pesado por lo que gastan los hogares.</p>
+      <div class="ip-table-wrap">
+        <table class="ip-table ip-clases" data-source="clases" data-row-key="ventana,periodo,clase">
+          <thead><tr>
+            <th data-field="clase">Clase</th>
+            <th data-field="nombre">Nombre</th>
+            <th data-field="variacion_pct" class="ip-num">Variación</th>
+            <th data-field="peso" class="ip-num">Peso en el índice</th>
+          </tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <p class="ip-sub ip-clases-vacio" hidden>Este rubro no tiene clases con dato en este período.</p>
+    </div>
+    <div class="ip-box" id="contra-indec">
+      <p class="ip-label">Contra el INDEC</p>
+      <p class="ip-sub">El rubro va contra lo comparable: las mismas clases que medimos, con la serie del INDEC de cada una y nuestros pesos. Los productos van contra el precio promedio que publica el INDEC para el GBA.</p>
+      <div class="ip-table-wrap">
+        <table class="ip-table ip-indec" data-source="contra_indec" data-row-key="periodo,tipo,codigo">
+          <thead><tr>
+            <th data-field="codigo">Código</th>
+            <th data-field="nombre">Nombre</th>
+            <th data-field="nuestro_pct" class="ip-num">Nuestro</th>
+            <th data-field="indec_pct" class="ip-num">INDEC</th>
+            <th data-field="diferencia" class="ip-num">Diferencia</th>
+            <th data-field="nota">Nota</th>
+          </tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <p class="ip-sub ip-indec-vacio" hidden></p>
+    </div>
+  </section>
+
+  <section class="ip-section" id="evolucion">
+    <h2 class="ip-h2">Evolución</h2>
+    <p class="ip-note">Variación de cada período contra el anterior. Un período sin dato queda como hueco, no como cero.</p>
+    <div class="ip-box">
+      <div class="ip-chart" id="grafico" data-source="periodos"></div>
+    </div>
+  </section>
+</div>
+
+<script>
+(() => {
+  const MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto',
+    'septiembre', 'octubre', 'noviembre', 'diciembre'];
+  const num = (x) => (x === '' || x == null || Number.isNaN(Number(x)) ? null : Number(x));
+  const pct = (v) => (v == null ? 'sin dato'
+    : (v > 0 ? '+' : v < 0 ? '-' : '') + Math.abs(v).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%');
+  const share = (v) => (v == null ? 'sin dato'
+    : v.toLocaleString('es-AR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + '%');
+  const enc = (s) => String(s).replace(/%/g, '%25').replace(/&/g, '%26').replace(/=/g, '%3D').replace(/,/g, '%2C');
+  const fecha = (iso) => { const [y, m, d] = iso.split('-'); return `${Number(d)}/${Number(m)}`; };
+  const nombreMes = (p) => { const [y, m] = p.split('-'); return `${MESES[Number(m) - 1]} ${y}`; };
+  const etiqueta = (r) => (r.ventana === 'semanal'
+    ? `Semana del ${fecha(r.desde)} al ${fecha(r.hasta)}/${r.hasta.slice(0, 4)}`
+    : nombreMes(r.periodo));
+  const corto = (r) => (r.ventana === 'semanal' ? fecha(r.desde) : MESES[Number(r.periodo.slice(5)) - 1].slice(0, 3));
+  const contra = (r) => (r.ventana === 'semanal' ? 'contra la semana anterior' : `contra ${nombreMes(r.base)}`);
+  const nombreRubro = (serie) => serie.replace(/^\d\d /, '');
+  const ORDEN_INDEC = ['rubro', 'agregado', 'clase', 'producto'];
+
+  const filasDe = (rows) => rows.map((r) => ({
+    ...r,
+    variacion_pct: num(r.variacion_pct), nivel: num(r.nivel),
+    cobertura_ipc_pct: num(r.cobertura_ipc_pct), peso_division_pct: num(r.peso_division_pct),
+  }));
+
+  dash.calc('cobertura_division', {
+    inputs: ['periodos'],
+    title: 'Cuánto de la división mide',
+    description: 'Parte de la división del INDEC que mide cada rubro: lo que mide del IPC sobre lo que pesa la división.',
+    fn: (periodos) => periodos
+      .filter((r) => r.tipo === 'rubro' && Number(r.peso_division_pct) > 0 && r.cobertura_ipc_pct !== '')
+      .map((r) => ({
+        ventana: r.ventana, periodo: r.periodo, division: r.division,
+        de_la_division_pct: (Number(r.cobertura_ipc_pct) / Number(r.peso_division_pct)) * 100,
+      })),
+  });
+
+  const segs = [...document.querySelectorAll('.ip-seg button')];
+  const sel = document.querySelector('.ip-periodo');
+  segs.forEach((b) => b.addEventListener('click', () => dash.setParams({ ventana: b.dataset.v, periodo: '' })));
+  sel.addEventListener('change', () => dash.setParams({ periodo: sel.value }));
+  document.querySelector('.ip-rubros').addEventListener('click', (ev) => {
+    const card = ev.target.closest('.ip-card');
+    if (card) dash.setParams({ rubro: card.dataset.division });
+  });
+
+  const marcar = (el, where) => { el.dataset.where = where; };
+  const valor = (el, v, fmt) => {
+    el.classList.remove('dash-skeleton');
+    el.textContent = fmt(v);
+    el.classList.toggle('ip-sindato', v == null);
+  };
+
+  function dibujarKpi(id, fila, where) {
+    const box = document.getElementById(id);
+    const [big, cob] = box.querySelectorAll('[data-source="periodos"]');
+    marcar(big, where); marcar(cob, where);
+    valor(big, fila ? fila.variacion_pct : null, pct);
+    valor(cob, fila ? fila.cobertura_ipc_pct : null, share);
+    return box;
+  }
+
+  function dibujarRubros(filas, v, p, elegido) {
+    const cont = document.querySelector('.ip-rubros');
+    const cobDiv = dash.data('cobertura_division');
+    const deDiv = new Map((cobDiv.status === 'ok' ? cobDiv.data : [])
+      .filter((r) => r.ventana === v && r.periodo === p).map((r) => [r.division, r.de_la_division_pct]));
+    cont.replaceChildren(...filas.map((r) => {
+      const card = document.createElement('button');
+      card.type = 'button';
+      card.className = 'ip-box ip-card';
+      card.id = `rubro-${r.division}`;
+      card.dataset.division = r.division;
+      card.setAttribute('aria-pressed', String(r.division === elegido));
+      const where = `ventana=${enc(v)}&periodo=${enc(p)}&tipo=rubro&division=${enc(r.division)}`;
+      const titulo = document.createElement('span'); titulo.className = 'ip-label'; titulo.textContent = nombreRubro(r.serie);
+      const big = document.createElement('span'); big.className = 'ip-big';
+      big.dataset.source = 'periodos'; big.dataset.field = 'variacion_pct'; big.dataset.where = where;
+      valor(big, r.variacion_pct, pct);
+      const sub = document.createElement('span'); sub.className = 'ip-sub';
+      if (r.variacion_pct == null) {
+        if (big.textContent === 'sin dato') big.textContent = 'todavía sin dato';
+        sub.textContent = v === 'semanal'
+          ? 'Sale de tiendas online o del surtidor, que se relevan desde el 14/10. Para comparar hacen falta dos semanas con al menos 5 días de fotos cada una.'
+          : 'Sale de tiendas online o del surtidor, que se relevan desde el 14/10. Para comparar hacen falta dos meses con al menos 20 días de fotos cada uno.';
+        card.append(titulo, big, sub);
+        return card;
+      }
+      const cob = document.createElement('span');
+      cob.dataset.source = 'periodos'; cob.dataset.field = 'cobertura_ipc_pct'; cob.dataset.where = where;
+      cob.textContent = share(r.cobertura_ipc_pct);
+      const dd = document.createElement('span');
+      dd.dataset.source = 'cobertura_division'; dd.dataset.field = 'de_la_division_pct';
+      dd.dataset.where = `ventana=${enc(v)}&periodo=${enc(p)}&division=${enc(r.division)}`;
+      dd.textContent = share(deDiv.has(r.division) ? deDiv.get(r.division) : null);
+      sub.append('mide ', cob, ' del IPC · ', dd, ' de la división');
+      card.append(titulo, big, sub);
+      return card;
+    }));
+  }
+
+  function dibujarClases(v, p, div) {
+    const c = dash.data('clases');
+    const filas = (c.status === 'ok' ? c.data : [])
+      .filter((r) => r.ventana === v && r.periodo === p && r.division === div)
+      .sort((a, b) => a.clase.localeCompare(b.clase));
+    const tbody = document.querySelector('.ip-clases tbody');
+    tbody.replaceChildren(...filas.map((r) => {
+      const tr = document.createElement('tr');
+      tr.dataset.key = `${enc(r.ventana)},${enc(r.periodo)},${enc(r.clase)}`;
+      const celdas = [r.clase, r.nombre, pct(num(r.variacion_pct)),
+        num(r.peso) == null ? 'sin dato' : share(num(r.peso) * 100)];
+      celdas.forEach((t, i) => {
+        const td = document.createElement('td'); td.textContent = t;
+        if (i >= 2) td.className = 'ip-num';
+        tr.append(td);
+      });
+      return tr;
+    }));
+    document.querySelector('.ip-clases-vacio').hidden = filas.length > 0;
+  }
+
+  function dibujarIndec(v, p, div) {
+    const vacio = document.querySelector('.ip-indec-vacio');
+    const tbody = document.querySelector('.ip-indec tbody');
+    const c = dash.data('contra_indec');
+    const filas = v !== 'mensual' ? [] : (c.status === 'ok' ? c.data : [])
+      .filter((r) => r.periodo === p && ((r.tipo === 'rubro' && r.codigo === div)
+        || (r.tipo === 'agregado' && div === '01' && r.codigo !== 'division alimentos')
+        || (r.tipo === 'clase' && r.codigo.startsWith(div + '.'))
+        || (r.tipo === 'producto' && r.codigo.slice(1, 3) === div)))
+      .sort((a, b) => (a.tipo === b.tipo ? a.codigo.localeCompare(b.codigo)
+        : ORDEN_INDEC.indexOf(a.tipo) - ORDEN_INDEC.indexOf(b.tipo)));
+    tbody.replaceChildren(...filas.map((r) => {
+      const tr = document.createElement('tr');
+      tr.dataset.key = `${enc(r.periodo)},${enc(r.tipo)},${enc(r.codigo)}`;
+      [r.codigo, r.nombre, pct(num(r.nuestro_pct)), pct(num(r.indec_pct)),
+        num(r.diferencia) == null ? 'sin dato'
+          : (num(r.diferencia) > 0 ? '+' : num(r.diferencia) < 0 ? '-' : '')
+            + Math.abs(num(r.diferencia)).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' pts',
+        r.nota].forEach((t, i) => {
+        const td = document.createElement('td'); td.textContent = t;
+        if (i >= 2 && i <= 4) td.className = 'ip-num';
+        tr.append(td);
+      });
+      return tr;
+    }));
+    vacio.hidden = filas.length > 0;
+    vacio.textContent = v !== 'mensual'
+      ? 'La comparación con el INDEC es mensual: elegí Meses.'
+      : 'Todavía no hay comparación para este mes: sale cuando el INDEC lo publica.';
+  }
+
+  const tip = document.createElement('div');
+  tip.className = 'ip-tip'; tip.hidden = true;
+
+  function dibujarGrafico(filas, v, rubro) {
+    const box = document.getElementById('grafico');
+    const periodos = [...new Set(filas.map((r) => r.periodo))].sort();
+    const series = [
+      { nombre: 'Global', tipo: 'global' },
+      { nombre: 'Sin online', tipo: 'sin_online' },
+      ...(rubro ? [{ nombre: nombreRubro(rubro.serie), tipo: 'rubro', division: rubro.division }] : []),
+    ].map((s, i) => ({
+      ...s, color: dash.colors[i],
+      puntos: periodos.map((p) => {
+        const r = filas.find((f) => f.periodo === p && f.tipo === s.tipo && (s.tipo !== 'rubro' || f.division === s.division));
+        return { periodo: p, fila: r, v: r ? r.variacion_pct : null };
+      }),
+    })).filter((s) => s.puntos.some((d) => d.v != null));
+    box.replaceChildren();
+    if (!periodos.length || !series.length) {
+      const p = document.createElement('p'); p.className = 'ip-sub';
+      p.textContent = 'Todavía no hay períodos con dato en esta ventana.';
+      box.append(p); return;
+    }
+    const W = Math.max(280, box.clientWidth), H = 260;
+    const vals = series.flatMap((s) => s.puntos.map((d) => d.v)).filter((x) => x != null);
+    const y = d3.scaleLinear([Math.min(0, d3.min(vals)), Math.max(0, d3.max(vals))], [H - 28, 12]).nice();
+    const svg = d3.select(box).append('svg').attr('width', '100%').attr('viewBox', `0 0 ${W} ${H}`);
+    const ejeY = svg.append('g').call(d3.axisLeft(y).ticks(5).tickFormat((d) => pct(d).replace('%', '')))
+      .attr('font-size', null).attr('font-family', null);
+    let ancho = 0;
+    ejeY.selectAll('text').each(function () { ancho = Math.max(ancho, this.getComputedTextLength()); });
+    const izq = ancho + 14, der = 96;
+    ejeY.attr('transform', `translate(${izq},0)`);
+    ejeY.selectAll('text').attr('fill', 'var(--color-fg-muted)').attr('font-size', 'var(--cds-font-size-caption)');
+    ejeY.selectAll('line').attr('stroke', 'var(--cds-chart-grid)').attr('x2', W - izq - der);
+    ejeY.select('.domain').remove();
+    const x = d3.scalePoint(periodos, [izq + 8, W - der]).padding(0.2);
+    svg.append('line').attr('x1', izq).attr('x2', W - der).attr('y1', y(0)).attr('y2', y(0))
+      .attr('stroke', 'var(--cds-chart-axis)');
+    const paso = Math.ceil(periodos.length / Math.max(1, Math.floor((W - izq - der) / 56)));
+    svg.append('g').selectAll('text').data(periodos.filter((_, i) => i % paso === 0)).join('text')
+      .attr('x', (p) => x(p)).attr('y', H - 8).attr('text-anchor', 'middle')
+      .attr('fill', 'var(--color-fg-muted)').attr('font-size', 'var(--cds-font-size-caption)')
+      .text((p) => corto(filas.find((f) => f.periodo === p)));
+    const linea = d3.line().defined((d) => d.v != null).x((d) => x(d.periodo)).y((d) => y(d.v));
+    series.forEach((s) => {
+      svg.append('path').datum(s.puntos).attr('d', linea).attr('fill', 'none')
+        .attr('stroke', s.color).attr('stroke-width', 2).attr('stroke-linecap', 'round').attr('stroke-linejoin', 'round');
+      svg.append('g').selectAll('circle').data(s.puntos.filter((d) => d.v != null)).join('circle')
+        .attr('cx', (d) => x(d.periodo)).attr('cy', (d) => y(d.v)).attr('r', 3).attr('fill', s.color);
+      const ultimo = [...s.puntos].reverse().find((d) => d.v != null);
+      svg.append('text').attr('x', x(ultimo.periodo) + 8).attr('y', y(ultimo.v) + 4)
+        .attr('fill', s.color).attr('font-size', 'var(--cds-font-size-caption)').text(s.nombre);
+    });
+    box.append(tip);
+    svg.on('mousemove', (ev) => {
+      const [mx] = d3.pointer(ev);
+      const p = periodos.reduce((a, b) => (Math.abs(x(b) - mx) < Math.abs(x(a) - mx) ? b : a));
+      const f = filas.find((r) => r.periodo === p);
+      tip.replaceChildren();
+      const cuando = document.createElement('div'); cuando.className = 'ip-tip-when'; cuando.textContent = etiqueta(f);
+      tip.append(cuando);
+      series.forEach((s) => {
+        const d = s.puntos.find((q) => q.periodo === p);
+        const l = document.createElement('div');
+        const sw = document.createElement('span'); sw.className = 'ip-sw'; sw.style.background = s.color;
+        l.append(sw, `${s.nombre}: ${pct(d.v)}`);
+        tip.append(l);
+      });
+      tip.hidden = false;
+      const bw = box.clientWidth, tw = tip.offsetWidth;
+      const px = (x(p) / W) * bw;
+      tip.style.left = `${Math.min(Math.max(0, px + 12), bw - tw)}px`;
+      tip.style.top = '8px';
+    }).on('mouseleave', () => { tip.hidden = true; });
+  }
+
+  dash.onData(() => {
+    const d = dash.data('periodos');
+    const params = dash.params();
+    const v = params.ventana === 'mensual' ? 'mensual' : 'semanal';
+    segs.forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.v === v)));
+    const take = document.querySelector('.ip-take-js');
+    if (d.status !== 'ok') { take.textContent = ''; return; }
+    const filas = filasDe(d.data).filter((r) => r.ventana === v);
+    const periodos = [...new Set(filas.map((r) => r.periodo))].sort().reverse();
+    const p = periodos.includes(params.periodo) ? params.periodo : periodos[0];
+    const ref = filas.find((r) => r.periodo === p);
+    sel.replaceChildren(...periodos.map((q) => new Option(etiqueta(filas.find((r) => r.periodo === q)), q)));
+    if (p) sel.value = p;
+    if (!p) {
+      take.textContent = v === 'semanal' ? 'Todavía no hay semanas calculadas.' : 'Todavía no hay meses calculados.';
+      return;
+    }
+    const delPeriodo = filas.filter((r) => r.periodo === p);
+    const fila = (tipo) => delPeriodo.find((r) => r.tipo === tipo);
+    const w = (tipo) => `ventana=${enc(v)}&periodo=${enc(p)}&tipo=${tipo}`;
+    dibujarKpi('kpi-global', fila('global'), w('global'));
+    dibujarKpi('kpi-sin-online', fila('sin_online'), w('sin_online'));
+    document.getElementById('kpi-por-region').hidden = !fila('por_region');
+    if (fila('por_region')) dibujarKpi('kpi-por-region', fila('por_region'), w('por_region'));
+
+    const g = fila('global'), s = fila('sin_online');
+    take.replaceChildren();
+    const nGlobal = document.createElement('b'); nGlobal.textContent = pct(g ? g.variacion_pct : null);
+    nGlobal.dataset.source = 'periodos'; nGlobal.dataset.field = 'variacion_pct'; nGlobal.dataset.where = w('global');
+    const nSepa = document.createElement('b'); nSepa.textContent = pct(s ? s.variacion_pct : null);
+    nSepa.dataset.source = 'periodos'; nSepa.dataset.field = 'variacion_pct'; nSepa.dataset.where = w('sin_online');
+    take.append(`${etiqueta(ref)}, ${contra(ref)}: global `, nGlobal, ', sin online ', nSepa, '.');
+    document.querySelector('.ip-calculado').textContent = ref.calculado_el
+      ? `Calculado el ${fecha(ref.calculado_el.slice(0, 10))}/${ref.calculado_el.slice(0, 4)} a las ${ref.calculado_el.slice(11, 16)}.` : '';
+
+    const rubros = delPeriodo.filter((r) => r.tipo === 'rubro').sort((a, b) => a.division.localeCompare(b.division));
+    const elegido = rubros.some((r) => r.division === params.rubro) ? params.rubro
+      : (rubros.find((r) => r.variacion_pct != null) || rubros[0] || {}).division;
+    dibujarRubros(rubros, v, p, elegido);
+    const rubro = rubros.find((r) => r.division === elegido);
+    document.querySelector('.ip-detalle-titulo').textContent = rubro
+      ? `${nombreRubro(rubro.serie)}: ${etiqueta(ref).toLowerCase()}` : 'Clases del rubro';
+    dibujarClases(v, p, elegido);
+    dibujarIndec(v, p, elegido);
+    dibujarGrafico(filas, v, rubro);
+  });
+})();
+</script>

@@ -183,3 +183,17 @@ clases:
 # Para renormalizar hace falta el nivel general, que es el denominador natural
 # cuando se actualiza la canasta completa.
 nivel_general: Nivel general
+
+# Las divisiones que tienen algun rubro medido, con su nombre en la planilla.
+# Las usa la comparacion contra el INDEC (reporte.contra_indec) para mostrar la
+# division entera al lado de lo comparable: Transporte, por ejemplo, mide solo
+# combustibles y su par es la serie de combustibles, no toda la division.
+divisiones:
+  "01": Alimentos y bebidas no alcohólicas
+  "03": Prendas de vestir y calzado
+  "04": Vivienda, agua, electricidad, gas y otros combustibles
+  "05": Equipamiento y mantenimiento del hogar
+  "06": Salud
+  "07": Transporte
+  "09": Recreación y cultura
+  "12": Bienes y servicios varios

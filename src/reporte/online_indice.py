@@ -18,11 +18,12 @@ Las dos tablas que se leen las publica el repo de captura:
 y uno online `(sitio, item_id)`: largos distintos, asi que juntarlos en el
 mismo grupo no puede pisar ninguno.
 
-**Solo ventana mensual.** El precio de un articulo online es la media de sus
-fotos del mes (formula 6 del INDEC, `fuentes_online.precio_del_mes`), con el
-mismo minimo de dias que SEPA. Las fotos arrancaron el 14/10/2026: con 20 dias
-minimos octubre no alcanza, y el primer mes que entra es noviembre contra
-diciembre. Antes de eso esto no cambia el numero, y esta bien que no lo cambie.
+**Mes o semana.** El precio de un articulo online es la media de sus fotos de
+la ventana (formula 6 del INDEC, `fuentes_online.precio_del_periodo`), con el
+mismo minimo de dias que SEPA: 20 en el mes, 5 en la semana. Las fotos
+arrancaron el 14/10/2026: por mes octubre no alcanza y el primero que entra es
+noviembre contra diciembre; por semana, la del 19 al 25/10 contra la del 12 al
+18 (que tiene 5 dias, del 14 al 18).
 """
 
 from __future__ import annotations
@@ -32,7 +33,7 @@ import json
 from datetime import date, datetime
 from pathlib import Path
 
-from .fuentes_online import ClaveOnline, precio_del_mes, quotes_de_foto
+from .fuentes_online import ClaveOnline, precio_del_periodo, quotes_de_foto
 
 # Combustibles: el `idproducto` del dataset de Energia -> categoria del indice
 # (el articulo ENGHo lo pone config/mapeo_categorias_engho.yaml). Son los cinco
@@ -106,17 +107,20 @@ def clasificacion_por_item(filas: list[tuple]) -> dict[ClaveOnline, tuple[str, s
 def quotes_por_articulo(
     fotos: dict[date, dict[ClaveOnline, float]],
     clasificacion: dict[ClaveOnline, tuple[str, str, str]],
-    mes: str,
+    inicio: date,
+    fin: date,
     minimo_dias: int,
 ) -> dict[str, dict[ClaveOnline, float]]:
-    """`articulo ENGHo -> {quote online: precio del mes}` para un mes.
+    """`articulo ENGHo -> {quote online: precio de la ventana}`, un mes o una semana.
 
-    Un articulo sin clasificar no entra: sin articulo no tiene peso, y meterlo
-    en algun lado seria inventarle uno.
+    El precio es la media de las fotos de la ventana (`precio_del_periodo`),
+    con el minimo de dias de la ventana: 20 en el mes, 5 en la semana. Un
+    articulo sin clasificar no entra: sin articulo no tiene peso, y meterlo en
+    algun lado seria inventarle uno.
     """
-    del_mes = precio_del_mes(fotos, minimo_dias).get(mes, {})
+    del_periodo = precio_del_periodo(fotos, inicio, fin, minimo_dias)
     salida: dict[str, dict[ClaveOnline, float]] = {}
-    for clave, precio in del_mes.items():
+    for clave, precio in del_periodo.items():
         c = clasificacion.get(clave)
         if c is None:
             continue

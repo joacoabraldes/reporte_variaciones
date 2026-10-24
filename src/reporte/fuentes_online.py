@@ -71,6 +71,26 @@ def precio_del_mes(
     }
 
 
+def precio_del_periodo(
+    fotos: dict[date, dict[ClaveOnline, float]],
+    inicio: date,
+    fin: date,
+    minimo_dias: int,
+) -> dict[ClaveOnline, float]:
+    """`{clave: media de sus precios}` en la ventana cerrada `inicio..fin`.
+
+    La misma cuenta que `precio_del_mes`, para cualquier ventana: un mes o una
+    semana ISO. Solo entra el articulo observado en al menos `minimo_dias` dias
+    de la ventana (20 en el mes, 5 en la semana: config/parametros.yaml).
+    """
+    acum: dict[ClaveOnline, list[float]] = {}
+    for dia, quotes in fotos.items():
+        if inicio <= dia <= fin:
+            for clave, precio in quotes.items():
+                acum.setdefault(clave, []).append(precio)
+    return {k: statistics.fmean(v) for k, v in acum.items() if len(v) >= minimo_dias}
+
+
 def dias_por_mes(fotos: dict[date, dict]) -> dict[str, int]:
     """Cuantos dias relevados tiene cada mes, para explicar un mes que no alcanza."""
     salida: dict[str, int] = {}

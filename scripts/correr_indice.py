@@ -28,12 +28,13 @@ no persiste nada.
 from __future__ import annotations
 
 import argparse
+import csv
 import contextlib
 import dataclasses
 import logging
 import sys
 from collections import defaultdict
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 
 import yaml
@@ -42,6 +43,7 @@ RAIZ = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(RAIZ / "src"))
 
 from reporte.agregacion import (  # noqa: E402
+    agregados_por_division,
     agregar,
     clases_desde_categorias,
     clases_sin_ponderador,
@@ -83,7 +85,19 @@ from reporte.ponderadores import (  # noqa: E402
     pesos_regionales,
     ponderadores_de_clase,
 )
+from reporte.historial import guardar_corrida  # noqa: E402
 from reporte.regiones import cargar_regiones, region_de_sucursal  # noqa: E402
+from reporte.series import (  # noqa: E402
+    COLUMNAS_CSV,
+    COLUMNAS_DETALLE,
+    SERIE_GLOBAL,
+    SERIE_POR_REGION,
+    SERIE_SIN_ONLINE,
+    division_de_serie,
+    serie_de_rubro,
+    filas_de_detalle,
+    filas_de_series,
+)
 from reporte.periodo import (  # noqa: E402
     AGREGADORES,
     AGREGADOR_DEFAULT,
@@ -199,6 +213,29 @@ def pesos_de_criterio(
     raise ValueError(f"criterio de ponderacion desconocido: {criterio!r}")
 
 
+def indices_por_articulo(
+    ga_base: dict[str, dict], ga_act: dict[str, dict], parametros: ParametrosVentana
+) -> tuple[dict[str, float], dict[str, int]]:
+    """Un Jevons por articulo de la ENGHo (operaciones 2 a 4) y sus quotes.
+
+    Se usa para el numero con todo, para el de solo SEPA y para cada region:
+    el mismo emparejado, el mismo filtro y el mismo Jevons en los tres.
+    """
+    indices: dict[str, float] = {}
+    n_quotes: dict[str, int] = {}
+    for art in sorted(set(ga_base) | set(ga_act)):
+        res = indice_elemental(
+            art, ga_base.get(art, {}), ga_act.get(art, {}),
+            umbral_mad=parametros.umbral_mad,
+            tope_ratio=parametros.tope_ratio,
+            minimo_quotes=parametros.minimo_quotes_mad,
+        )
+        if res.indice is not None:
+            indices[art] = res.indice
+            n_quotes[art] = res.n_quotes
+    return indices, n_quotes
+
+
 # --------------------------------------------------------------------------- #
 # Por region, como el INDEC
 # --------------------------------------------------------------------------- #
@@ -245,20 +282,12 @@ def variacion_por_region(
     niveles: dict[str, float] = {}
     filas: list[tuple] = []
     for r in pesos_regionales():
-        ga_b = agrupar(base_r.get(r, {}), articulo_de)
-        ga_a = agrupar(act_r.get(r, {}), articulo_de)
-        indices_art: dict[str, float] = {}
-        n_quotes = 0
-        for art in set(ga_b) | set(ga_a):
-            res = indice_elemental(
-                art, ga_b.get(art, {}), ga_a.get(art, {}),
-                umbral_mad=parametros.umbral_mad,
-                tope_ratio=parametros.tope_ratio,
-                minimo_quotes=parametros.minimo_quotes_mad,
-            )
-            if res.indice is not None:
-                indices_art[art] = res.indice
-                n_quotes += res.n_quotes
+        indices_art, n_quotes_art = indices_por_articulo(
+            agrupar(base_r.get(r, {}), articulo_de),
+            agrupar(act_r.get(r, {}), articulo_de),
+            parametros,
+        )
+        n_quotes = sum(n_quotes_art.values())
         paso = clases_desde_categorias(
             indices_art, {a: clase_del_indice(a) for a in indices_art},
             pesos_engho_region[r],
@@ -362,12 +391,11 @@ def main(argv=None) -> int:
     p.add_argument("--tope-ratio", type=float, default=None,
                    help="pisa la banda del tope absoluto del YAML")
     # Las tiendas online y el surtidor de combustibles (etapa 5). Sus quotes se
-    # suman al grupo de su articulo ENGHo y de ahi es el mismo calculo que SEPA. Solo
-    # mensual: el precio del mes de un articulo online es la media de sus fotos
-    # diarias, y una semana no alcanza el minimo de dias.
+    # suman al grupo de su articulo ENGHo y de ahi es el mismo calculo que SEPA.
+    # El precio de la ventana es la media de sus fotos diarias, con el minimo
+    # de dias de la ventana: 20 en el mes, 5 en la semana (parametros.yaml).
     p.add_argument("--con-online", action="store_true",
-                   help="suma las tiendas online y el surtidor de combustibles "
-                        "(solo --ventana mensual)")
+                   help="suma las tiendas online y el surtidor de combustibles")
     # Como el INDEC: cada region por separado y despues el nacional con los
     # pesos regionales (formula 15). Sin esto se mezcla el pais en un solo
     # Jevons y cada region pesa por cuantas sucursales tiene en SEPA.
@@ -375,8 +403,6 @@ def main(argv=None) -> int:
                    help="calcula cada region y arma el nacional como el INDEC")
     p.add_argument("-v", "--verboso", action="store_true")
     args = p.parse_args(argv)
-    if args.con_online and args.ventana != MENSUAL:
-        p.error("--con-online es solo para --ventana mensual")
     if args.por_region and args.con_online:
         p.error("--por-region todavia no resuelve la region de lo online ni del "
                 "surtidor; no cambia ningun numero hasta noviembre->diciembre")
@@ -497,6 +523,9 @@ def _correr(args) -> int:
     }
     categoria_de = {k: v[0] for k, v in clasif.items()}
     clase_de_categoria = {v[0]: v[1] for v in clasif.values()}
+    # Las clases que mide SEPA, antes de sumar las online: es el universo del
+    # numero "sin online" que pidio Juan (22/10/2026).
+    clases_sepa = set(clase_de_categoria.values())
 
     # id_producto -> articulo de la ENGHo, componiendo con la categoria. Es la
     # clave de agrupacion del calculo: el nivel elemental es el articulo.
@@ -640,7 +669,7 @@ def _correr(args) -> int:
         print("-" * ANCHO)
         for per in periodos:
             online[per.etiqueta] = quotes_por_articulo(
-                fotos_online, clasif_online, per.etiqueta,
+                fotos_online, clasif_online, per.inicio, per.fin,
                 parametros.minimo_dias_quote,
             )
             n = sum(len(g) for g in online[per.etiqueta].values())
@@ -677,6 +706,12 @@ def _correr(args) -> int:
     # canasta completa. Calcularlo sobre `pond` da 100% siempre.
     pond_crudos = ponderadores_de_clase(args.region)
     variaciones: list[VariacionPeriodo] = []
+    # Las series que se llevan mes a mes (global, sin online, rubros): una
+    # entrada por mes en cada una, alineadas con `meses_series`.
+    series: dict[str, list[tuple[float | None, float]]] = {}
+    meses_series: list[tuple[str, str]] = []
+    # Indice y peso de cada clase y articulo: el contrato con contra_indec.py.
+    detalle: list[dict] = []
 
     for base_per, act_per in zip(periodos, periodos[1:]):
         q_base = resultados[base_per.etiqueta]
@@ -754,19 +789,13 @@ def _correr(args) -> int:
         ga_base = sumar_grupos(agrupar(q_base.precios, articulo_de), on_base)
         ga_act = sumar_grupos(agrupar(q_act.precios, articulo_de), on_act)
 
-        indices_art: dict[str, float] = {}
+        indices_art, n_quotes_art = indices_por_articulo(ga_base, ga_act, parametros)
+
+        # El mismo conjunto de ratios, promediado a mano en vez de en
+        # logaritmos. NO se usa para calcular: es la comparacion que muestra el
+        # drift de Carli sobre datos reales.
         indices_carli: dict[str, float] = {}
-        n_quotes_art: dict[str, int] = {}
         for art in sorted(set(ga_base) | set(ga_act)):
-            res = indice_elemental(
-                art, ga_base.get(art, {}), ga_act.get(art, {}),
-                umbral_mad=parametros.umbral_mad,
-                tope_ratio=parametros.tope_ratio,
-                minimo_quotes=parametros.minimo_quotes_mad,
-            )
-            # El mismo conjunto de ratios, promediado a mano en vez de en
-            # logaritmos. NO se usa para calcular: es la comparacion que muestra
-            # el drift de Carli sobre datos reales.
             limpios, _, _ = detectar_outliers(
                 emparejar(ga_base.get(art, {}), ga_act.get(art, {}))[0],
                 parametros.umbral_mad, parametros.tope_ratio,
@@ -774,9 +803,6 @@ def _correr(args) -> int:
             )
             if limpios:
                 indices_carli[art] = sum(r.ratio for r in limpios) / len(limpios)
-            if res.indice is not None:
-                indices_art[art] = res.indice
-                n_quotes_art[art] = res.n_quotes
 
         clase_de_articulo = {a: clase_del_indice(a) for a in indices_art}
         cuenta_cats = defaultdict(int)
@@ -872,6 +898,35 @@ def _correr(args) -> int:
         agregado_carli = agregar("PILOTO", "P", clases_carli, pesos_universo)
         agregado = agregados["engho"]
 
+        # -- LOS DOS NUMEROS Y LOS RUBROS (Juan, 22/10/2026) ------------- #
+        # El sin-online se RECALCULA con los quotes de SEPA solos, no se saca
+        # restando clases: cada articulo es UN Jevons sobre las dos fuentes, y
+        # si una clase tuviera las dos, restar dejaria lo online adentro.
+        if args.con_online:
+            idx_sepa, _ = indices_por_articulo(
+                agrupar(q_base.precios, articulo_de),
+                agrupar(q_act.precios, articulo_de), parametros,
+            )
+            clases_solo_sepa = clases_desde_categorias(
+                idx_sepa, {a: clase_del_indice(a) for a in idx_sepa}, pesos_engho,
+            ).indices
+            sin_online = agregar("SIN_ONLINE", "solo SEPA", clases_solo_sepa,
+                                 {c: pond[c][1] for c in clases_sepa})
+        else:
+            clases_solo_sepa, sin_online = indices_clase, agregado
+        rubros = agregados_por_division(indices_clase, pesos_universo)
+
+        def del_ipc(clases) -> float:
+            return sum(pond_crudos[c][1] for c in clases if c in pond_crudos)
+
+        del_mes: dict[str, tuple[float | None, float]] = {}
+        if args.con_online:
+            del_mes[SERIE_GLOBAL] = (agregado.indice, del_ipc(indices_clase))
+        del_mes[SERIE_SIN_ONLINE] = (sin_online.indice, del_ipc(clases_solo_sepa))
+        for div, res in rubros.items():
+            del_mes[serie_de_rubro(div, pond_crudos[div][0])] = (res.indice, del_ipc(res.componentes))
+        indice_region: float | None = None
+
         print()
         if agregado.indice is None:
             print("sin dato agregado")
@@ -922,7 +977,30 @@ def _correr(args) -> int:
                       f"solo Jevons, para comparar")
                 print(f"  quotes sin region: {sin_region:,} (no entran al calculo "
                       f"por region)")
+                indice_region = indice_mes
             variaciones.append(VariacionPeriodo(base_per, act_per, indice_mes))
+
+        if args.por_region:
+            del_mes[SERIE_POR_REGION] = (indice_region, del_ipc(indices_clase))
+        print()
+        print("LOS DOS NUMEROS Y LOS RUBROS (rubro = division del INDEC)")
+        print(f"{'serie':<46} {'var %':>9} {'del IPC':>8} {'de la div':>10}")
+        print("-" * ANCHO)
+        for nombre, (indice, cubre) in del_mes.items():
+            var = "   s/dato" if indice is None else f"{(indice-1)*100:>+9.4f}"
+            div = division_de_serie(nombre) or ""
+            de_div = (f"{100*cubre/pond_crudos[div][1]:>9.0f}%"
+                      if div in rubros and pond_crudos.get(div, ("", 0))[1] else "")
+            print(f"{nombre[:46]:<46} {var} {100*cubre:>7.2f}% {de_div:>10}")
+        print("  'de la div' es cuanto de la division del INDEC mide el rubro: un")
+        print("  rubro que mide poco de su division no es la division del INDEC.")
+        meses_series.append((base_per.etiqueta, act_per.etiqueta))
+        for nombre, valor in del_mes.items():
+            series.setdefault(nombre, []).append(valor)
+        detalle.extend(filas_de_detalle(
+            base_per.etiqueta, act_per.etiqueta, indices_clase, pesos_universo,
+            indices_art, pesos_engho,
+        ))
 
         # -- diagnostico --
         print()
@@ -952,6 +1030,38 @@ def _correr(args) -> int:
         print()
         for etiqueta, nivel in serie_encadenada(variaciones, base=100.0):
             print(f"  {etiqueta:<12} {nivel:>10.4f}")
+
+    if meses_series:
+        filas_series = filas_de_series(meses_series, series)
+        print()
+        print("POR SERIE: cada una encadenada por su lado, base 100 en su primer mes")
+        print(f"{'serie':<46} " + " ".join(f"{m:>10}" for _, m in meses_series))
+        print("-" * ANCHO)
+        for nombre in series:
+            niveles = [f["nivel"] for f in filas_series if f["serie"] == nombre]
+            print(f"{nombre[:46]:<46} " + " ".join(
+                f"{n:>10.4f}" if n is not None else f"{'-':>10}" for n in niveles))
+        if args.salida:
+            destino_csv = _ruta_salida(args.salida).with_suffix(".csv")
+            with destino_csv.open("w", encoding="utf-8", newline="") as fh:
+                escritor = csv.DictWriter(fh, fieldnames=COLUMNAS_CSV)
+                escritor.writeheader()
+                escritor.writerows(filas_series)
+            print(f"\nseries guardadas en {destino_csv}")
+            destino_detalle = destino_csv.with_name(destino_csv.stem + "_detalle.csv")
+            with destino_detalle.open("w", encoding="utf-8", newline="") as fh:
+                escritor = csv.DictWriter(fh, fieldnames=COLUMNAS_DETALLE)
+                escritor.writeheader()
+                escritor.writerows(detalle)
+            print(f"detalle por clase y articulo en {destino_detalle} "
+                  f"(lo lee scripts/contra_indec.py)")
+            # La corrida se suma a la historia que lee el dashboard; nunca pisa.
+            corrida = guardar_corrida(
+                args.ventana, datetime.now(),
+                {"series": filas_series, "detalle": detalle},
+                raiz=destino_csv.parent / "historial",
+            )
+            print(f"corrida guardada en la historia: {corrida}")
 
     # -- 7. lo que hay que mirar -------------------------------------------- #
 

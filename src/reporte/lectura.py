@@ -54,6 +54,7 @@ PREFIJO_RELEVAMIENTO_ONLINE = "staged/relevamiento_online"
 PREFIJO_CLASIFICACION_ONLINE = "staged/clasificacion_online"
 PREFIJO_COMBUSTIBLES = "staged/combustibles"
 PREFIJO_SUCURSALES = "staged/sucursales"
+PREFIJO_INDEC = "staged/indec"
 
 # El contrato con captura (`precios.geo.georef.COLUMNAS` alla): escrito literal
 # de los dos lados, y cada lado tiene un test que lo fija.
@@ -471,6 +472,19 @@ class LectorBucket:
             PREFIJO_COMBUSTIBLES, "vigentes.csv",
             self.cache / "etapa5" / "datos_oficiales" / "combustibles",
         )
+
+    def bajar_planillas_indec(self) -> dict[str, Path]:
+        """`nombre -> ruta` de la ultima copia de cada planilla del INDEC.
+
+        Las publica captura (`relevar-indec`) en `staged/indec/fecha=Y/`, y no
+        guarda una copia igual a la anterior: cada planilla puede tener su
+        ultima version en una fecha distinta.
+        """
+        raiz = self._bajar_fotos(PREFIJO_INDEC, ".xls", self.cache / "etapa5" / "indec")
+        ultima: dict[str, Path] = {}
+        for p in sorted(raiz.glob("fecha=*/*.xls")):
+            ultima[p.name] = p
+        return ultima
 
     def _bajar_fotos(self, prefijo: str, archivo: str, destino: Path) -> Path:
         bucket = self.cliente.bucket(self.bucket_nombre)
