@@ -50,7 +50,13 @@ from reporte.agregacion import (  # noqa: E402
     laspeyres,
     variacion_nacional,
 )
+from reporte.carnicerias import (  # noqa: E402
+    cargar_config as cargar_config_carnicerias,
+    relativos_por_plaza,
+    tradicional_por_articulo,
+)
 from reporte.elemental import (  # noqa: E402
+    combinar_canales,
     detectar_outliers,
     emparejar,
     MOTIVO_OUTLIER_MAD,
@@ -81,11 +87,17 @@ from reporte.ponderadores import (  # noqa: E402
     conectar as conectar_engho,
     factores_actualizacion,
     nivel_de_la_canasta,
+    participacion_supermercados,
     pesos_de_articulos,
     pesos_regionales,
     ponderadores_de_clase,
 )
 from reporte.historial import guardar_corrida  # noqa: E402
+from reporte.tarifas import (  # noqa: E402
+    cargar_clasificacion as cargar_clasificacion_tarifas,
+    fuentes_solo_con_afiliados,
+    quotes_por_articulo as quotes_de_tarifas,
+)
 from reporte.regiones import cargar_regiones, region_de_sucursal  # noqa: E402
 from reporte.series import (  # noqa: E402
     COLUMNAS_CSV,
@@ -252,6 +264,10 @@ def variacion_por_region(
     factores_region: dict[str, dict[str, float]],
     clases_taxonomia: set[str],
     parametros: ParametrosVentana,
+    tradicional_region: dict[str, dict[str, float]] | None = None,
+    part_super_region: dict[str, dict[str, float]] | None = None,
+    nacionales_base: dict[str, dict] | None = None,
+    nacionales_act: dict[str, dict] | None = None,
 ) -> tuple[float, list[tuple], int]:
     """El nacional como lo arma el INDEC: cada region y despues la suma (formulas 7 a 15).
 
@@ -282,11 +298,16 @@ def variacion_por_region(
     niveles: dict[str, float] = {}
     filas: list[tuple] = []
     for r in pesos_regionales():
+        # Lo que vale lo mismo en todo el pais (una tarifa fijada por norma
+        # nacional) entra igual en cada region.
         indices_art, n_quotes_art = indices_por_articulo(
-            agrupar(base_r.get(r, {}), articulo_de),
-            agrupar(act_r.get(r, {}), articulo_de),
+            sumar_grupos(agrupar(base_r.get(r, {}), articulo_de), nacionales_base or {}),
+            sumar_grupos(agrupar(act_r.get(r, {}), articulo_de), nacionales_act or {}),
             parametros,
         )
+        if tradicional_region:
+            indices_art = combinar_canales(
+                indices_art, tradicional_region[r], part_super_region[r])
         n_quotes = sum(n_quotes_art.values())
         paso = clases_desde_categorias(
             indices_art, {a: clase_del_indice(a) for a in indices_art},
@@ -310,6 +331,29 @@ def variacion_por_region(
 # --------------------------------------------------------------------------- #
 # Reporte
 # --------------------------------------------------------------------------- #
+
+
+def imprimir_carnicerias(
+    indices_sepa: dict[str, float],
+    tradicional: dict[str, float],
+    part_super: dict[str, float],
+    mes: str,
+) -> None:
+    """Cada articulo con carniceria: SEPA, IPCVA, la proporcion y lo que queda."""
+    print()
+    if not tradicional:
+        print(f"CARNICERIAS: no hay informe del IPCVA de {mes}; la carne va con SEPA solo")
+        return
+    print("CARNICERIAS (IPCVA) Y SUPERMERCADOS (SEPA), formula 8")
+    print(f"{'articulo':<10} {'SEPA %':>9} {'IPCVA %':>9} {'en super':>9} {'junto %':>9}")
+    print("-" * ANCHO)
+    for art in sorted(tradicional):
+        s = part_super.get(art)
+        if art not in indices_sepa or s is None:
+            continue           # combinar_canales corta si falta la proporcion
+        junto = indices_sepa[art] ** s * tradicional[art] ** (1 - s)
+        print(f"{art:<10} {(indices_sepa[art]-1)*100:>+9.3f} {(tradicional[art]-1)*100:>+9.3f} "
+              f"{s:>9.1%} {(junto-1)*100:>+9.3f}")
 
 
 def titulo(texto: str) -> None:
@@ -401,8 +445,20 @@ def main(argv=None) -> int:
     # Jevons y cada region pesa por cuantas sucursales tiene en SEPA.
     p.add_argument("--por-region", action="store_true",
                    help="calcula cada region y arma el nacional como el INDEC")
+    # Las carnicerias del IPCVA, el canal tradicional de la carne que SEPA no
+    # tiene: en cada articulo se combinan con SEPA con la proporcion de la ENGHo
+    # (formula 8 del INDEC, operacion 5). El IPCVA publica una vez por mes.
+    p.add_argument("--con-carnicerias", action="store_true",
+                   help="combina la carne de SEPA con las carnicerias del IPCVA")
+    # Las tarifas y precios fijados por norma (servicio domestico...): captura
+    # transcribe la norma, config/tarifas.yaml dice el articulo de cada item, y
+    # sus valores entran como quotes al Jevons de su articulo.
+    p.add_argument("--con-tarifas", action="store_true",
+                   help="suma las tarifas y precios fijados por norma")
     p.add_argument("-v", "--verboso", action="store_true")
     args = p.parse_args(argv)
+    if args.con_carnicerias and args.ventana != MENSUAL:
+        p.error("--con-carnicerias es mensual: el IPCVA publica un informe por mes")
     if args.por_region and args.con_online:
         p.error("--por-region todavia no resuelve la region de lo online ni del "
                 "surtidor; no cambia ningun numero hasta noviembre->diciembre")
@@ -483,7 +539,9 @@ def _correr(args) -> int:
     print(f"ponderadores        {args.region}"
           + ("" if args.sin_actualizar else ", actualizados por precios"))
     print("fuentes             SEPA"
-          + (" + tiendas online + surtidor de combustibles" if args.con_online else ""))
+          + (" + tiendas online + surtidor de combustibles" if args.con_online else "")
+          + (" + carnicerias del IPCVA" if args.con_carnicerias else "")
+          + (" + tarifas fijadas por norma" if args.con_tarifas else ""))
     print()
     print(f"parametros de la ventana '{parametros.tipo}':")
     print(f"  agregador del mes           {args.agregador}"
@@ -579,6 +637,21 @@ def _correr(args) -> int:
         for dia, quotes in fotos_comb.items():
             fotos_online.setdefault(dia, {}).update(quotes)
 
+    # -- las tarifas fijadas por norma ------------------------------------- #
+    filas_tarifas: list[dict] = []
+    clasif_tarifas: dict[tuple[str, str], str] = {}
+    con_afiliados: set[str] = set()
+    if args.con_tarifas:
+        filas_tarifas = lector.tarifas()
+        clasif_tarifas = cargar_clasificacion_tarifas()
+        con_afiliados = fuentes_solo_con_afiliados()
+        sin_mapeo = sorted(set(clasif_tarifas.values()) - set(art_de_cat))
+        if sin_mapeo:
+            raise SystemExit("estas categorias de tarifas no tienen articulo en "
+                             "config/mapeo_categorias_engho.yaml: " + ", ".join(sin_mapeo))
+        for cat in clasif_tarifas.values():
+            clase_de_categoria[cat] = clase_del_indice(art_de_cat[cat])
+
     # articulo -> categorias que caen en el, para poder nombrar las filas.
     cat_de_articulo: dict[str, list[str]] = defaultdict(list)
     for categoria, art in sorted(art_de_cat.items()):
@@ -591,6 +664,8 @@ def _correr(args) -> int:
         n_prod_art[art_de_cat[categoria]] += 1
     for _, _, art in clasif_online.values():
         n_prod_art[art] += 1
+    for cat in clasif_tarifas.values():
+        n_prod_art[art_de_cat[cat]] += 1
 
     # -- ponderadores de la ENGHo (el dato que reemplaza al supuesto) ------- #
 
@@ -612,8 +687,16 @@ def _correr(args) -> int:
                 r, con=con_engho, omitir_sin_gasto=True))
             for r in REGIONES.values()
         } if args.por_region else {}
+        # Donde compran la carne los hogares: la proporcion fija de la formula 8.
+        part_super = (participacion_supermercados(con_engho, args.region)
+                      if args.con_carnicerias else {})
+        part_super_region = {
+            r: participacion_supermercados(con_engho, r) for r in REGIONES.values()
+        } if args.con_carnicerias and args.por_region else {}
     finally:
         con_engho.close()
+    filas_ipcva = lector.precios_ipcva() if args.con_carnicerias else []
+    config_carnicerias = cargar_config_carnicerias()
 
     # La region de cada sucursal: captura publica el partido (georef) y este
     # repo decide cual es GBA (config/regiones.yaml).
@@ -737,10 +820,28 @@ def _correr(args) -> int:
                      if not emp_online else ""))
             emparejados |= emp_online
 
-        g_base = sumar_grupos(agrupar(q_base.precios, categoria_de),
-                              por_categoria(on_base, clasif_online))
-        g_act = sumar_grupos(agrupar(q_act.precios, categoria_de),
-                             por_categoria(on_act, clasif_online))
+        # Las tarifas: el valor del mes en que cierra cada periodo.
+        def tarifas_de(per, agrupar_por):
+            return quotes_de_tarifas(filas_tarifas, clasif_tarifas, agrupar_por,
+                                     per.fin.strftime("%Y-%m"),
+                                     solo_con_afiliados=con_afiliados) if args.con_tarifas else {}
+        tar_base = tarifas_de(base_per, art_de_cat)
+        tar_act = tarifas_de(act_per, art_de_cat)
+        if args.con_tarifas:
+            emp_tarifas = ({k for g in tar_base.values() for k in g}
+                           & {k for g in tar_act.values() for k in g})
+            print(f"  tarifas emparejadas         {len(emp_tarifas):>12,}"
+                  + ("  (sin valores de los dos meses: no cambia el numero)"
+                     if not emp_tarifas else ""))
+            emparejados |= emp_tarifas
+        por_cat = {c: c for c in clasif_tarifas.values()}
+
+        g_base = sumar_grupos(sumar_grupos(agrupar(q_base.precios, categoria_de),
+                                           por_categoria(on_base, clasif_online)),
+                              tarifas_de(base_per, por_cat))
+        g_act = sumar_grupos(sumar_grupos(agrupar(q_act.precios, categoria_de),
+                                          por_categoria(on_act, clasif_online)),
+                             tarifas_de(act_per, por_cat))
 
         # -- por categoria elemental: SOLO DIAGNOSTICO --
         # El calculo no usa estos indices. La unidad del indice es el articulo
@@ -786,10 +887,24 @@ def _correr(args) -> int:
         # a la MISMA media geometrica. Asi el peso relativo entre las dos sale
         # solo, por cuantos ratios aporta cada una, sin elegir un criterio de
         # reparto y sin salir del espacio geometrico.
-        ga_base = sumar_grupos(agrupar(q_base.precios, articulo_de), on_base)
-        ga_act = sumar_grupos(agrupar(q_act.precios, articulo_de), on_act)
+        ga_base = sumar_grupos(sumar_grupos(agrupar(q_base.precios, articulo_de), on_base),
+                               tar_base)
+        ga_act = sumar_grupos(sumar_grupos(agrupar(q_act.precios, articulo_de), on_act),
+                              tar_act)
 
         indices_art, n_quotes_art = indices_por_articulo(ga_base, ga_act, parametros)
+
+        # -- las carnicerias: el canal tradicional (operacion 5) ---------- #
+        trad_art: dict[str, float] = {}
+        rel_plaza: dict = {}
+        if args.con_carnicerias:
+            rel_plaza = relativos_por_plaza(
+                filas_ipcva, base_per.etiqueta, act_per.etiqueta)
+            trad_art = tradicional_por_articulo(
+                rel_plaza, config_carnicerias.pares, config_carnicerias.plazas,
+                args.region, pesos_regionales())
+            imprimir_carnicerias(indices_art, trad_art, part_super, act_per.etiqueta)
+            indices_art = combinar_canales(indices_art, trad_art, part_super)
 
         # El mismo conjunto de ratios, promediado a mano en vez de en
         # logaritmos. NO se usa para calcular: es la comparacion que muestra el
@@ -803,6 +918,8 @@ def _correr(args) -> int:
             )
             if limpios:
                 indices_carli[art] = sum(r.ratio for r in limpios) / len(limpios)
+        # Con el mismo canal tradicional, para que la diferencia sea solo la formula.
+        indices_carli = combinar_canales(indices_carli, trad_art, part_super)
 
         clase_de_articulo = {a: clase_del_indice(a) for a in indices_art}
         cuenta_cats = defaultdict(int)
@@ -870,7 +987,7 @@ def _correr(args) -> int:
 
         # -- clases -> nivel del indice (Laspeyres con pesos del INDEC) --
         #
-        # Guarda de la operacion 6: ver clases_sin_ponderador en agregacion.py.
+        # Guarda de la operacion 7: ver clases_sin_ponderador en agregacion.py.
         clases_taxonomia = set(clase_de_categoria.values())
         sin_ponderador = clases_sin_ponderador(clases_taxonomia, pond)
         if sin_ponderador:
@@ -902,11 +1019,13 @@ def _correr(args) -> int:
         # El sin-online se RECALCULA con los quotes de SEPA solos, no se saca
         # restando clases: cada articulo es UN Jevons sobre las dos fuentes, y
         # si una clase tuviera las dos, restar dejaria lo online adentro.
-        if args.con_online:
+        if args.con_online or args.con_tarifas:
             idx_sepa, _ = indices_por_articulo(
                 agrupar(q_base.precios, articulo_de),
                 agrupar(q_act.precios, articulo_de), parametros,
             )
+            # Las carnicerias no son online: se quedan tambien en este numero.
+            idx_sepa = combinar_canales(idx_sepa, trad_art, part_super)
             clases_solo_sepa = clases_desde_categorias(
                 idx_sepa, {a: clase_del_indice(a) for a in idx_sepa}, pesos_engho,
             ).indices
@@ -920,7 +1039,7 @@ def _correr(args) -> int:
             return sum(pond_crudos[c][1] for c in clases if c in pond_crudos)
 
         del_mes: dict[str, tuple[float | None, float]] = {}
-        if args.con_online:
+        if args.con_online or args.con_tarifas:
             del_mes[SERIE_GLOBAL] = (agregado.indice, del_ipc(indices_clase))
         del_mes[SERIE_SIN_ONLINE] = (sin_online.indice, del_ipc(clases_solo_sepa))
         for div, res in rubros.items():
@@ -960,6 +1079,14 @@ def _correr(args) -> int:
                     q_base.precios, q_act.precios, articulo_de, region_de,
                     pesos_engho_region, pond_region, pond_base_region,
                     factores_region, clases_taxonomia, parametros,
+                    tradicional_region={
+                        r: tradicional_por_articulo(
+                            rel_plaza, config_carnicerias.pares,
+                            config_carnicerias.plazas, r, pesos_regionales())
+                        for r in REGIONES.values()
+                    } if args.con_carnicerias else None,
+                    part_super_region=part_super_region,
+                    nacionales_base=tar_base, nacionales_act=tar_act,
                 )
                 print()
                 print("POR REGION, COMO EL INDEC (cada region y despues el nacional)")
@@ -1099,6 +1226,10 @@ def _correr(args) -> int:
         print("  97,9% de sus precios tiene mas de un año) y se cortan los")
         print(f"  precios de mas de {ANTIGUEDAD_MAXIMA_DIAS} dias: mide Shell, Axion,"
               " Puma, Gulf y el resto.")
+    if args.con_tarifas:
+        print("- Tarifas: valores transcriptos de cada norma (config/tarifas/ en")
+        print("  captura), validados contra el aumento que dice la norma. Valen")
+        print("  igual en todo el pais.")
     if inv.comercios_faltantes:
         print(f"- {len(inv.comercios_faltantes)} dias tienen comercios que no reportaron:")
         print("  sus quotes pueden caer bajo el minimo de dias y salir de la muestra")

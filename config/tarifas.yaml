@@ -1,0 +1,60 @@
+# Tarifas y precios fijados por norma: que categoria es cada item que publica captura.
+#
+# Captura transcribe la norma (config/tarifas/<fuente>.yaml alla) y publica cada
+# item con su precio por mes en staged/tarifas/. Aca se decide en que categoria
+# cae cada item; el articulo de la ENGHo lo pone config/mapeo_categorias_engho.yaml,
+# como para SEPA y lo online. Un item que no esta aca no entra al indice.
+
+fuentes:
+
+  # Resolucion 6/2026 de la Comision Nacional de Trabajo en Casas Particulares.
+  # Clase 05.6.2, 1,79% del IPC nacional. La ENGHo separa el servicio domestico
+  # por modalidad, no por categoria de trabajador: cada articulo toma las
+  # categorias de esa modalidad y su Jevons las promedia.
+  servicio_domestico:
+    supervisor_con_retiro_hora: tarifas.servicio_domestico_por_hora
+    tareas_especificas_con_retiro_hora: tarifas.servicio_domestico_por_hora
+    tareas_generales_con_retiro_hora: tarifas.servicio_domestico_por_hora
+
+    supervisor_con_retiro_mes: tarifas.servicio_domestico_mensual
+    tareas_especificas_con_retiro_mes: tarifas.servicio_domestico_mensual
+    tareas_generales_con_retiro_mes: tarifas.servicio_domestico_mensual
+
+    # Cama adentro se paga por mes: el valor por hora sin retiro no se usa.
+    supervisor_sin_retiro_mes: tarifas.servicio_domestico_cama_adentro
+    tareas_especificas_sin_retiro_mes: tarifas.servicio_domestico_cama_adentro
+    tareas_generales_sin_retiro_mes: tarifas.servicio_domestico_cama_adentro
+    caseros_sin_retiro_mes: tarifas.servicio_domestico_cama_adentro
+
+    cuidado_personas_con_retiro_hora: tarifas.cuidado_de_personas
+    cuidado_personas_con_retiro_mes: tarifas.cuidado_de_personas
+    cuidado_personas_sin_retiro_mes: tarifas.cuidado_de_personas
+
+  # Prepagas: los cuadros tarifarios de la SSS (Resolucion 645/2025), un item por
+  # prepaga, plan, region y rango de edad. Clase 06.4, 2,2%. Todos a la cuota
+  # voluntaria (77,8% de la clase); la cuota adicional a la obra social no se
+  # distingue en los cuadros.
+  prepagas:
+    "*": tarifas.prepaga_cuota
+
+  # Alquileres: Index de Zonaprop, alquiler PEDIDO de un 2 ambientes (nuevos
+  # contratos), CABA y GBA. Clase 04.1.1, 3,43%. El INDEC mide lo que pagan los
+  # contratos vigentes: es una aproximacion, a decidir por Juan.
+  alquileres_zonaprop:
+    caba_2amb: tarifas.alquiler
+    gba_norte_2amb: tarifas.alquiler
+    gba_sur_2amb: tarifas.alquiler
+    gba_oeste_2amb: tarifas.alquiler
+
+  # Colectivo: boleto minimo de las lineas de la Ciudad y de las nacionales del
+  # AMBA. Clase 07.3.2, 2,6%. Falta la Provincia (ver captura).
+  colectivo_caba:
+    boleto_0_3_km: tarifas.colectivo
+  colectivo_nacional:
+    boleto_minimo: tarifas.colectivo
+
+# Fuentes cuyos items cuentan solo si tienen afiliados ese mes (columna `capitas`).
+# En las prepagas, de 14.877 registros de septiembre muchos son el mismo plan
+# ofrecido en regiones donde nadie lo tiene: un Jevons sin pesos los contaria igual
+# que el plan con 35.000 afiliados.
+solo_con_afiliados: [prepagas]

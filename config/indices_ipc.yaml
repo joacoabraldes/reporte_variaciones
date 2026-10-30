@@ -106,6 +106,42 @@ clases:
   "01.2.2":
     apertura: Aguas minerales, bebidas gaseosas y jugos
 
+  # --- SEPA fuera de alimentos: vinos, cerveza y limpieza (27/10/2026) -------
+  # El INDEC no abre las clases: publica el grupo "Bebidas alcohólicas" (02.1) y
+  # "Bienes y servicios para la conservación del hogar" (05.6), en las seis
+  # regiones (verificado 27/10/2026).
+
+  "02.1.2":
+    apertura: Bebidas alcohólicas
+    usa_nivel_superior: "02.1"
+
+  "02.1.3":
+    apertura: Bebidas alcohólicas
+    usa_nivel_superior: "02.1"
+
+  "05.6.1":
+    apertura: Bienes y servicios para la conservación del hogar
+    usa_nivel_superior: "05.6"
+
+  # --- Tarifas y precios fijados por norma (30/10/2026) ----------------------
+  # Servicio domestico: tampoco tiene serie propia; el INDEC publica el grupo
+  # 05.6 en las seis regiones, con limpieza adentro.
+  "05.6.2":
+    apertura: Bienes y servicios para la conservación del hogar
+    usa_nivel_superior: "05.6"
+
+  # Prepagas tiene serie propia en las seis regiones; alquileres tambien, y el
+  # colectivo usa la del grupo "Transporte publico" (07.3).
+  "06.4":
+    apertura: Gastos de prepagas
+
+  "04.1.1":
+    apertura: Alquiler de la vivienda
+
+  "07.3.2":
+    apertura: Transporte público
+    usa_nivel_superior: "07.3"
+
   # --- Fuera de SEPA: ropa y calzado de las tiendas online (10/2026) ---------
   # El INDEC publica el grupo y no la clase: "Prendas de vestir y materiales"
   # (03.1) y "Calzado" (03.2). Se usa el grupo, igual que con 01.1.9.
@@ -155,6 +191,37 @@ clases:
       - Recreación y cultura
     usa_nivel_superior: "09.1 (09 fuera de GBA y Pampeana)"
 
+  # Fravega, 30/10/2026. Camaras y memorias como el resto de 09.1; juguetes y
+  # deporte con la division (09.3 no se publica); neumaticos y bicicletas con
+  # el grupo de su transporte (verificado en las seis regiones el 30/10/2026).
+  "09.1.2":
+    apertura:
+      - Equipos audiovisuales, fotográficos y de procesamiento de la información
+      - Recreación y cultura
+    usa_nivel_superior: "09.1 (09 fuera de GBA y Pampeana)"
+
+  "09.1.4":
+    apertura:
+      - Equipos audiovisuales, fotográficos y de procesamiento de la información
+      - Recreación y cultura
+    usa_nivel_superior: "09.1 (09 fuera de GBA y Pampeana)"
+
+  "09.3.1":
+    apertura: Recreación y cultura
+    usa_nivel_superior: "09"
+
+  "09.3.2":
+    apertura: Recreación y cultura
+    usa_nivel_superior: "09"
+
+  "07.2.1":
+    apertura: Funcionamiento de equipos de transporte personal
+    usa_nivel_superior: "07.2"
+
+  "07.1.3":
+    apertura: Adquisición de vehículos
+    usa_nivel_superior: "07.1"
+
   "04.3.1":
     apertura:
       - Mantenimiento y reparación de la vivienda
@@ -190,6 +257,7 @@ nivel_general: Nivel general
 # combustibles y su par es la serie de combustibles, no toda la division.
 divisiones:
   "01": Alimentos y bebidas no alcohólicas
+  "02": Bebidas alcohólicas y tabaco
   "03": Prendas de vestir y calzado
   "04": Vivienda, agua, electricidad, gas y otros combustibles
   "05": Equipamiento y mantenimiento del hogar

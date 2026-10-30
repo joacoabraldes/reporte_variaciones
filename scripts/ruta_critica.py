@@ -3,7 +3,7 @@
     python scripts/ruta_critica.py           # el índice, para leer en orden
     python scripts/ruta_critica.py --full    # con el bloque completo de cada una
 
-Las nueve operaciones donde se fabrica el número están marcadas en el código con
+Las diez operaciones donde se fabrica el número están marcadas en el código con
 un bloque de seis campos. Este script las junta y las ordena. **El índice sale
 del código y no de un documento aparte** a propósito: un documento se
 desincroniza y nadie se entera, y el problema que esto viene a resolver es
@@ -12,7 +12,7 @@ justamente que lo que está escrito diga lo que el código hace.
 Si falta una operación o sobra, este script lo dice: cuenta cuántas encontró
 contra cuántas declaran ser.
 
-El campo que importa es FALLA ASI. Un error en estas nueve no tira una excepción:
+El campo que importa es FALLA ASI. Un error en estas diez no tira una excepción:
 devuelve un número plausible, y la única forma de encontrarlo es leer.
 """
 
@@ -27,7 +27,7 @@ RAIZ = Path(__file__).resolve().parents[1]
 DONDE = ("src", "scripts")
 CAMPOS = ("QUE HACE", "FORMULA", "POR QUE ASI", "LO VERIFICA", "FALLA ASI")
 
-# "CRITICO 3 de 9", y tolera el "CRITICO 6 de 9, la guarda" de los lugares donde
+# "CRITICO 3 de 10", y tolera el "CRITICO 7 de 10, la guarda" de los lugares donde
 # una operacion tiene su control en otro archivo.
 # Exige el marco de "===" para no confundir una mencion en prosa con un
 # marcador de verdad. El propio archivo se saltea por el mismo motivo.

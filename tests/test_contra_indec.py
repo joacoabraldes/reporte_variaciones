@@ -155,7 +155,7 @@ def test_todas_las_series_del_config_estan_en_las_seis_regiones():
     serie en las seis regiones. Si el INDEC cambia un nombre, corta aca."""
     ap = leer_aperturas(RAIZ / "docs" / "ipc_aperturas.xls")
     clases, divisiones = aperturas_del_indice()
-    assert set(divisiones) == {"01", "03", "04", "05", "06", "07", "09", "12"}
+    assert set(divisiones) == {"01", "02", "03", "04", "05", "06", "07", "09", "12"}
     for nombre in [*clases.values(), *divisiones.values()]:
         assert variacion_indec(ap, nombre, "2026-06", "2026-07") > 0
 

@@ -285,6 +285,11 @@ def pesos_por_articulo(
         params[:1],
     ).fetchall()
     hojas = hojas_del_indec()
+    # La ENGHo anota la venta de un usado (una bicicleta, un auto) como gasto
+    # negativo en la misma clase. El indice mide precios de compra: el peso sale
+    # de lo que se compra, y la venta no entra ni al numerador ni al total. Con
+    # la venta adentro, la compra de bicicleta pesaba 113% de su clase.
+    filas = [(a, g) for a, g in filas if g is not None and float(g) > 0]
     hoja = {a: _hoja(a, hojas) for a, _ in filas}
     total: dict[str, float] = {}
     for a, gasto in filas:
@@ -295,6 +300,39 @@ def pesos_por_articulo(
         for a, gasto in filas
         if hoja[a] is not None and total[hoja[a]] > 0
     }
+
+
+# La ENGHo anota en que tipo de negocio se hizo cada compra (`tipo_negocio`):
+# 1 supermercado o hipermercado, 2 autoservicio, 3 especializado (la carniceria,
+# para la carne), 5 kiosco, 9 otros. SEPA son los supermercados; el autoservicio
+# chico y el especializado quedan del lado tradicional.
+TIPO_NEGOCIO_SUPERMERCADO = 1
+
+
+def participacion_supermercados(
+    con: duckdb.DuckDBPyConnection, region: str
+) -> dict[str, float]:
+    """`articulo -> parte del gasto que se hace en supermercados`, de 0 a 1.
+
+    Es la proporcion fija de la formula 8 del INDEC, que la saca de la ENGHo
+    2004/05; aca sale de la 2017/18, con el mismo criterio que los pesos. La
+    carne picada: 21,9% en el pais, 20,7% de la carne vacuna en GBA.
+    """
+    if region == REGION_NACIONAL:
+        filtro, params = "TRUE", []
+    else:
+        cod = REGION_POR_NOMBRE.get(region)
+        if cod is None:
+            raise ValueError(f"region desconocida: {region!r} "
+                             f"(hay: {', '.join(REGIONES.values())}, {REGION_NACIONAL})")
+        filtro, params = "region = ?", [cod]
+    filas = con.execute(
+        "SELECT articulo, "
+        "sum(CASE WHEN tipo_negocio = ? THEN pondera * monto ELSE 0 END), "
+        f"sum(pondera * monto) FROM gastos WHERE {filtro} GROUP BY articulo",
+        [TIPO_NEGOCIO_SUPERMERCADO, *params],
+    ).fetchall()
+    return {a: float(s) / float(t) for a, s, t in filas if t and t > 0}
 
 
 def calcular(
@@ -538,7 +576,7 @@ def factores_actualizacion(
     return factores
 
 
-# =========================================================== CRITICO 6 de 9 ===
+# ========================================================== CRITICO 7 de 10 ===
 # QUE HACE     lleva los ponderadores de clase a la base de precios del indice
 # FORMULA      peso'(c) = peso(c) x factor(c) / suma( peso(j) x factor(j) )
 # POR QUE ASI  Laspeyres pide que los pesos esten a precios de la base. Los de

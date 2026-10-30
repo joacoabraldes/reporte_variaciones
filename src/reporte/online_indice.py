@@ -2,7 +2,7 @@
 
 El calculo del indice es un Jevons por ARTICULO de la ENGHo: los quotes de SEPA
 se agrupan por articulo (`agrupar(..., articulo_de)` en correr_indice), cada
-articulo da un indice, y la operacion 5 los sube a clase con los pesos de la
+articulo da un indice, y la operacion 6 los sube a clase con los pesos de la
 ENGHo. Lo online entra por el mismo lugar: sus quotes, ya con el precio del mes,
 se suman al grupo de su articulo. De ahi en adelante no hay un camino aparte:
 la misma muestra emparejada, el mismo filtro, el mismo Jevons, los mismos pesos.

@@ -27,6 +27,7 @@ con comercios faltantes, y dias completos.
 
 from __future__ import annotations
 
+import csv
 import dataclasses
 import hashlib
 import logging
@@ -55,11 +56,51 @@ PREFIJO_CLASIFICACION_ONLINE = "staged/clasificacion_online"
 PREFIJO_COMBUSTIBLES = "staged/combustibles"
 PREFIJO_SUCURSALES = "staged/sucursales"
 PREFIJO_INDEC = "staged/indec"
+PREFIJO_IPCVA = "staged/ipcva"
+PREFIJO_TARIFAS = "staged/tarifas"
 
 # El contrato con captura (`precios.geo.georef.COLUMNAS` alla): escrito literal
 # de los dos lados, y cada lado tiene un test que lo fija.
 COLUMNAS_SUCURSALES = ("id_comercio", "id_sucursal", "provincia", "provincia_id",
                        "departamento_id", "departamento", "latitud", "longitud")
+
+# Lo mismo con los precios de carnicerias (`precios.online.ipcva.COLUMNAS`) y
+# con las tarifas fijadas por norma (`precios.online.tarifas.COLUMNAS`).
+COLUMNAS_IPCVA = ("mes_informe", "plaza", "corte", "mes", "precio")
+COLUMNAS_TARIFAS = ("fuente", "item_id", "descripcion", "unidad", "mes", "precio",
+                    "norma", "url")
+
+
+def _ultima_copia_de_cada(rutas: list, columnas: tuple[str, ...]) -> list[dict]:
+    """Las filas de la ultima copia de cada `<clave>/fecha=<dia>/archivo.csv`.
+
+    Captura nunca pisa: una correccion queda con otra fecha, y vale la ultima.
+    Corta si falta una columna del contrato.
+    """
+    ultima: dict[str, Path] = {}
+    for r in sorted(Path(r) for r in rutas):
+        ultima[r.parent.parent.name] = r
+    filas: list[dict] = []
+    for ruta in ultima.values():
+        with ruta.open(encoding="utf-8", newline="") as fh:
+            lector = csv.DictReader(fh)
+            faltan = [c for c in columnas if c not in (lector.fieldnames or [])]
+            if faltan:
+                raise ValueError(f"{ruta} no tiene las columnas {faltan}: el contrato "
+                                 f"con captura es {columnas}")
+            # Las columnas de mas se conservan (las prepagas traen sus afiliados).
+            filas += [{**f, "precio": float(f["precio"])} for f in lector]
+    return filas
+
+
+def leer_precios_ipcva(rutas: list) -> list[dict]:
+    """Las filas de `staged/ipcva/informe=<mes>/fecha=<dia>/precios_por_corte.csv`."""
+    return _ultima_copia_de_cada(rutas, COLUMNAS_IPCVA)
+
+
+def leer_tarifas(rutas: list) -> list[dict]:
+    """Las filas de `staged/tarifas/fuente=<fuente>/fecha=<dia>/valores.csv`."""
+    return _ultima_copia_de_cada(rutas, COLUMNAS_TARIFAS)
 
 
 def leer_sucursales(rutas: list) -> list[dict]:
@@ -485,6 +526,24 @@ class LectorBucket:
         for p in sorted(raiz.glob("fecha=*/*.xls")):
             ultima[p.name] = p
         return ultima
+
+    def precios_ipcva(self) -> list[dict]:
+        """Los precios por corte de las carnicerias del IPCVA, de todos los informes.
+
+        Los publica captura (`relevar-ipcva`) en `staged/ipcva/informe=X/fecha=Y/`.
+        """
+        raiz = self._bajar_fotos(PREFIJO_IPCVA, "precios_por_corte.csv",
+                                 self.cache / "etapa5" / "ipcva")
+        return leer_precios_ipcva(list(raiz.glob("informe=*/fecha=*/precios_por_corte.csv")))
+
+    def tarifas(self) -> list[dict]:
+        """Las tarifas y precios fijados por norma, de todas las fuentes.
+
+        Los publica captura (`relevar-tarifas`) en `staged/tarifas/fuente=X/fecha=Y/`.
+        """
+        raiz = self._bajar_fotos(PREFIJO_TARIFAS, "valores.csv",
+                                 self.cache / "etapa5" / "tarifas")
+        return leer_tarifas(list(raiz.glob("fuente=*/fecha=*/valores.csv")))
 
     def _bajar_fotos(self, prefijo: str, archivo: str, destino: Path) -> Path:
         bucket = self.cliente.bucket(self.bucket_nombre)

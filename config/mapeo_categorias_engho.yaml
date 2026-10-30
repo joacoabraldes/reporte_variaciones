@@ -330,6 +330,57 @@ categorias:
     articulo: A0117130
     descripcion: Zapallitos frescos                 # 2,23% de 01.1.7
 
+  # Verduras envasadas, 26/10/2026: lo congelado, seco y en conserva, 13,9% de
+  # la clase. Hasta aca verduras medía casi solo lo fresco y volatil.
+
+  verduras.congeladas:
+    articulo: A0117201
+    descripcion: Verduras congeladas                # 0,54% de 01.1.7
+
+  verduras.surtido_congelado:
+    articulo: A0117206
+    descripcion: Surtidos de verduras congeladas    # 5,21% de 01.1.7
+
+  verduras.papas_congeladas:
+    articulo: A0117202
+    descripcion: Papas y otros tubérculos congelados  # 1,07% de 01.1.7
+
+  verduras.milanesa_soja:
+    articulo: A0117204
+    descripcion: Milanesa de soja                   # 1,28% de 01.1.7
+
+  verduras.lentejas_secas:
+    articulo: A0117302
+    descripcion: Lentejas secas                     # 0,75% de 01.1.7
+
+  verduras.lentejas_conserva:
+    articulo: A0117307
+    descripcion: Lentejas en conserva               # 0,21% de 01.1.7
+
+  verduras.porotos_secos:
+    articulo: A0117303
+    descripcion: Porotos secos                      # 0,23% de 01.1.7
+
+  verduras.arvejas_conserva:
+    articulo: A0117305
+    descripcion: Arvejas en conserva                # 1,01% de 01.1.7
+
+  verduras.choclo_conserva:
+    articulo: A0117306
+    descripcion: Choclo en conserva                 # 0,78% de 01.1.7
+
+  verduras.conserva:
+    articulo: A0117311
+    descripcion: Verduras en conserva               # 0,73% de 01.1.7
+
+  verduras.pure_instantaneo:
+    articulo: A0117312
+    descripcion: Polvo para puré de papa o batata   # 0,98% de 01.1.7
+
+  verduras.aceitunas:
+    articulo: A0117134
+    descripcion: Aceitunas                          # 1,08% de 01.1.7
+
   # ------------------------------------------- aguas, gaseosas y jugos --
 
   bebidas.gaseosas:
@@ -347,6 +398,82 @@ categorias:
   bebidas.jugo_en_polvo:
     articulo: A0122302
     descripcion: Jugos y refrescos en polvo para preparar bebidas # 8,83% de 01.2.2
+
+  # ------------------------------------- bebidas alcoholicas, 27/10/2026 --
+  # 02.1.2 y 02.1.3 pesan 1,51% del IPC nacional. SEPA no dice si un vino es fino
+  # o comun: captura los separa por envase (750 ml el fino; tetra, brik o de un
+  # litro para arriba el comun). Porcentajes: peso nacional en su clase.
+
+  alcohol.vino_fino:
+    articulo: A0212202
+    descripcion: Vino fino                          # 56,36% de 02.1.2
+
+  alcohol.vino_comun:
+    articulo: A0212201
+    descripcion: Vino común                         # 20,75% de 02.1.2
+
+  alcohol.aperitivos:
+    articulo: A0212204
+    descripcion: Aperitivos                         # 13,17% de 02.1.2
+
+  alcohol.espumante:
+    articulo: A0212206
+    descripcion: Vino espumante                     # 5,12% de 02.1.2
+
+  alcohol.sidra:
+    articulo: A0212205
+    descripcion: Sidra                              # 3,81% de 02.1.2
+
+  alcohol.cerveza:
+    articulo: A0213301
+    descripcion: Cerveza                            # 100% de 02.1.3
+
+  # ----------------------------------------------- limpieza, 27/10/2026 --
+  # 05.6.1 pesa 1,89% del IPC nacional; estas once son el 82,1% de la clase.
+
+  limpieza.jabon_liquido_ropa:
+    articulo: A0561107
+    descripcion: Detergente líquido para ropa       # 17,19% de 05.6.1
+
+  limpieza.jabon_polvo_ropa:
+    articulo: A0561111
+    descripcion: Jabón en polvo para ropa           # 12,84% de 05.6.1
+
+  limpieza.lavandina:
+    articulo: A0561112
+    descripcion: Lavandina                          # 9,40% de 05.6.1
+
+  limpieza.detergente_vajilla:
+    articulo: A0561108
+    descripcion: Detergente liquido para vajilla    # 9,38% de 05.6.1
+
+  limpieza.limpiadores:
+    articulo: A0561105
+    descripcion: Desengrasante, desinfectante, líquidos limpiadores # 8,70% de 05.6.1
+
+  limpieza.rollo_cocina:
+    articulo: A0561306
+    descripcion: Servilletas de papel y rollos de papel # 8,61% de 05.6.1
+
+  limpieza.suavizante:
+    articulo: A0561101
+    descripcion: Acondicionadores y suavizantes para ropa # 4,96% de 05.6.1
+
+  limpieza.aromatizante:
+    articulo: A0561106
+    descripcion: Desodorante y aromatizante de ambientes/baño # 4,80% de 05.6.1
+
+  limpieza.insecticida:
+    articulo: A0561109
+    descripcion: Insecticidas varios                # 4,03% de 05.6.1
+
+  limpieza.bolsas_residuos:
+    articulo: A0561309
+    descripcion: Bolsas para residuos               # 1,99% de 05.6.1
+
+  limpieza.limpiavidrios:
+    articulo: A0561114
+    descripcion: Limpiavidrios                      # 0,21% de 05.6.1
 
   # ================================================= online, 10/2026 --
   # Ropa y calzado de las tiendas online. La categoria sale de la
@@ -614,6 +741,39 @@ categorias:
     articulo: A0913102
     descripcion: "Computadora personal: notebook, netbook"  # 57,75% de 09.1.3
 
+  # Fravega, 30/10/2026: camaras, memorias, neumaticos, bicicletas y deporte.
+  online.camara_digital:
+    articulo: A0912102
+    descripcion: "Camara digital"  # 48,2% de 09.1.2
+
+  online.pendrive_memoria:
+    articulo: A0914102
+    descripcion: "Pendrive y tarjetas de memoria"  # 36,5% de 09.1.4
+
+  online.cartucho_toner:
+    articulo: A0914103
+    descripcion: "Cartucho, tonner, cinta para impresora"  # 43,5% de 09.1.4
+
+  online.neumatico:
+    articulo: A0721103
+    descripcion: "Cubiertas, neumaticos"  # 50,6% de 07.2.1
+
+  online.bicicleta_adulto:
+    articulo: A0713101
+    descripcion: "Compra de bicicleta para adulto"  # toda 07.1.3
+
+  online.bicicleta_infantil:
+    articulo: A0931108
+    descripcion: "Bicicleta (excepto para adulto), triciclo"  # 19,9% de 09.3.1
+
+  online.aparatos_gimnasia:
+    articulo: A0932105
+    descripcion: "Aparatos para gimnasia: pesas, discos, colchonetas"  # 10,1% de 09.3.2
+
+  online.pelota:
+    articulo: A0932102
+    descripcion: "Pelota para deporte"  # 4,6% de 09.3.2
+
   online.computadora:
     articulo: A0913101
     descripcion: "Computadora de escritorio, CPU"  # 18,08% de 09.1.3
@@ -725,3 +885,39 @@ categorias:
     articulo: A0722301
     descripcion: "Gas natural comprimido, GNC"  # 5,35% de 07.2.2
 
+
+  # ------------------------------------------------------------ tarifas --
+  # Precios fijados por norma (pendiente: tarifas y precios publicados). Captura
+  # los transcribe y publica en staged/tarifas/; config/tarifas.yaml dice que
+  # categoria es cada item. Servicio domestico, desde el 30/10/2026: los cuatro
+  # miden el 89,0% de 05.6.2 (falta seguridad social, jardinero y vigilancia).
+
+  tarifas.servicio_domestico_por_hora:
+    articulo: A0562101
+    descripcion: "Servicio domestico con retiro por hora"  # 56,92% de 05.6.2
+
+  tarifas.servicio_domestico_mensual:
+    articulo: A0562104
+    descripcion: "Servicio domestico con retiro mensual"  # 15,27% de 05.6.2
+
+  tarifas.cuidado_de_personas:
+    articulo: A0562105
+    descripcion: "Tareas de asistencia y cuidado de personas"  # 13,82% de 05.6.2
+
+  tarifas.servicio_domestico_cama_adentro:
+    articulo: A0562102
+    descripcion: "Servicio domestico sin retiro (cama adentro)"  # 2,95% de 05.6.2
+
+  # Prepagas, alquileres y colectivo (30/10/2026, para llegar al 65% del IPC).
+
+  tarifas.prepaga_cuota:
+    articulo: A0641101
+    descripcion: "Cuota de afiliacion voluntaria a un sistema prepago"  # 77,8% de 06.4
+
+  tarifas.alquiler:
+    articulo: A0411101
+    descripcion: "Alquiler de la vivienda de uso permanente"  # 99,1% de 04.1.1
+
+  tarifas.colectivo:
+    articulo: A0732104
+    descripcion: "Boleto de colectivo urbano o suburbano"  # 60,2% de 07.3.2

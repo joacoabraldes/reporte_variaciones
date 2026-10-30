@@ -66,7 +66,7 @@ def renormalizar(pesos: dict[str, float]) -> dict[str, float]:
     return {k: v / total for k, v in pesos.items()}
 
 
-# ==================================================== GUARDA de CRITICO 6 ===
+# ==================================================== GUARDA de CRITICO 7 ===
 # QUE HACE     corta la corrida si una clase de la taxonomia no tiene ponderador
 # FORMULA      clases_taxonomia - claves(pond)
 # POR QUE ASI  sin esto la clase se excluye sola y no deja rastro: no entra al
@@ -81,7 +81,7 @@ def clases_sin_ponderador(
 ) -> list[str]:
     """Clases que estan en la taxonomia y no tienen ponderador.
 
-    Es la guarda de la operacion 7. Una clase sin ponderador no entra ni al
+    Es la guarda de la operacion 8. Una clase sin ponderador no entra ni al
     numerador ni al denominador de Laspeyres, asi que la cobertura sigue
     diciendo 100% y el indice queda calculado sobre menos canasta sin que nada
     avise. Devolver la lista permite cortar antes de dar un numero.
@@ -89,7 +89,7 @@ def clases_sin_ponderador(
     return sorted(c for c in clases_taxonomia if c not in pond)
 
 
-# =========================================================== CRITICO 7 de 9 ===
+# ========================================================== CRITICO 8 de 10 ===
 # QUE HACE     clases COICOP -> nivel del indice
 # FORMULA      suma( peso_renormalizado(clase) x indice(clase) ), sobre las
 #              clases que tienen indice Y peso > 0
@@ -151,7 +151,7 @@ def agregados_por_division(
 ) -> dict[str, ResultadoAgregado]:
     """Un Laspeyres por division: los rubros que se informan al lado del global.
 
-    Es la operacion 7 aplicada a cada division por separado, con el mismo
+    Es la operacion 8 aplicada a cada division por separado, con el mismo
     renormalizado: una clase con peso y sin dato no entra, y la cobertura dice
     que fraccion del peso de la division tiene dato. Una division sin ninguna
     clase con dato sale con `indice=None` (lo online, hasta noviembre).
@@ -182,7 +182,7 @@ class ClasesDesdeCategorias:
     categorias_por_clase: dict[str, int] = dataclasses.field(default_factory=dict)
 
 
-# =========================================================== CRITICO 5 de 9 ===
+# ========================================================== CRITICO 6 de 10 ===
 # QUE HACE     media ponderada de las categorias elementales dentro de cada
 #              clase COICOP. Es el escalon entre Jevons y Laspeyres.
 # FORMULA      indice(clase) = suma( peso(cat) x indice(cat) ) / suma( peso(cat) )
@@ -228,7 +228,7 @@ def clases_desde_categorias(
     )
 
 
-# =========================================================== CRITICO 8 de 9 ===
+# ========================================================== CRITICO 9 de 10 ===
 # QUE HACE     regiones -> nacional
 # FORMULA      nacional = suma( peso_region x nivel_region ), sobre NIVELES; la
 #              variacion del mes es el cociente de dos nacionales
@@ -286,7 +286,7 @@ def variacion_nacional(
     return despues / antes
 
 
-# =========================================================== CRITICO 9 de 9 ===
+# ========================================================== CRITICO 10 de 10 ===
 # QUE HACE     el nivel del indice mes a mes
 # FORMULA      indice_t = indice_{t-1} x variacion_t
 # POR QUE ASI  multiplicativo y nunca contra la base directa: la canasta rota, y

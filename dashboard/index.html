@@ -30,6 +30,9 @@
   .ip-table th { font-weight: var(--cds-font-weight-medium); color: var(--color-fg-muted); font-size: var(--cds-font-size-caption); }
   .ip-table td.ip-num, .ip-table th.ip-num { text-align: right; white-space: nowrap; }
   .ip-chart { position: relative; min-height: 260px; }
+  .ip-chart-filas { min-height: 0; }
+  .ip-leyenda { display: flex; flex-wrap: wrap; align-items: center; gap: 0 var(--cds-gap-xs); }
+  .ip-sw-indec { background: var(--cds-chart-muted); margin-left: var(--cds-gap-sm); }
   .ip-tip { position: absolute; pointer-events: none; background: var(--cds-surface-popover); border: 1px solid var(--cds-border); border-radius: var(--cds-radius); box-shadow: var(--cds-shadow-popover); padding: var(--cds-pad-xs) var(--cds-pad-sm); font-size: var(--cds-font-size-caption); white-space: nowrap; }
   .ip-tip-when { color: var(--cds-text-secondary); }
   .ip-sw { display: inline-block; width: 0.6rem; height: 0.6rem; border-radius: 50%; margin-right: 0.35rem; }
@@ -87,16 +90,19 @@
 
   <section class="ip-section" id="detalle">
     <h2 class="ip-h2 ip-detalle-titulo">Clases del rubro</h2>
-    <div class="ip-box">
-      <p class="ip-label">Variación de cada clase</p>
-      <p class="ip-sub">El rubro es el promedio de sus clases, pesado por lo que gastan los hogares.</p>
+    <div class="ip-box" id="aportes" data-source="clases">
+      <p class="ip-label">De dónde sale el número del rubro</p>
+      <p class="ip-sub">Cuántos puntos aporta cada clase: su variación por su peso en el rubro (lo que gastan los hogares). Sumados dan la variación del rubro.</p>
+      <div class="ip-chart ip-chart-filas" id="grafico-aportes" data-source="clases_del_rubro"></div>
+      <p class="ip-sub ip-aportes-suma"></p>
       <div class="ip-table-wrap">
-        <table class="ip-table ip-clases" data-source="clases" data-row-key="ventana,periodo,clase">
+        <table class="ip-table ip-clases" data-source="clases_del_rubro" data-row-key="ventana,periodo,clase">
           <thead><tr>
             <th data-field="clase">Clase</th>
             <th data-field="nombre">Nombre</th>
             <th data-field="variacion_pct" class="ip-num">Variación</th>
-            <th data-field="peso" class="ip-num">Peso en el índice</th>
+            <th data-field="peso_en_rubro_pct" class="ip-num">Peso en el rubro</th>
+            <th data-field="aporte_pts" class="ip-num">Aporta</th>
           </tr></thead>
           <tbody></tbody>
         </table>
@@ -106,6 +112,10 @@
     <div class="ip-box" id="contra-indec">
       <p class="ip-label">Contra el INDEC</p>
       <p class="ip-sub">El rubro va contra lo comparable: las mismas clases que medimos, con la serie del INDEC de cada una y nuestros pesos. Los productos van contra el precio promedio que publica el INDEC para el GBA.</p>
+      <div class="ip-indec-grafico">
+        <p class="ip-sub ip-leyenda"><span class="ip-sw ip-sw-nuestro"></span>Nuestro <span class="ip-sw ip-sw-indec"></span>INDEC · ordenadas de la que más se aleja a la que menos; a la derecha, la diferencia en puntos</p>
+        <div class="ip-chart ip-chart-filas" id="grafico-indec" data-source="contra_indec"></div>
+      </div>
       <div class="ip-table-wrap">
         <table class="ip-table ip-indec" data-source="contra_indec" data-row-key="periodo,tipo,codigo">
           <thead><tr>
@@ -125,9 +135,10 @@
 
   <section class="ip-section" id="evolucion">
     <h2 class="ip-h2">Evolución</h2>
-    <p class="ip-note">Variación de cada período contra el anterior. Un período sin dato queda como hueco, no como cero.</p>
+    <p class="ip-note">Índice encadenado de cada serie, 100 en su primer período. Cada punto es el período entero, ubicado en el medio de sus fechas; la línea vertical es el período elegido. Semanas y meses usan la misma escala, pero no dan lo mismo: el mes no se arma encadenando semanas. Un período sin dato corta la línea.</p>
     <div class="ip-box">
       <div class="ip-chart" id="grafico" data-source="periodos"></div>
+      <p class="ip-sub ip-graf-nota"></p>
     </div>
   </section>
 </div>
@@ -137,17 +148,32 @@
   const MESES = ['enero', 'febrero', 'marzo', 'abril', 'mayo', 'junio', 'julio', 'agosto',
     'septiembre', 'octubre', 'noviembre', 'diciembre'];
   const num = (x) => (x === '' || x == null || Number.isNaN(Number(x)) ? null : Number(x));
-  const pct = (v) => (v == null ? 'sin dato'
-    : (v > 0 ? '+' : v < 0 ? '-' : '') + Math.abs(v).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%');
+  // Un valor que redondea a cero es "0", sin signo ni decimales: "-0,00" no dice nada.
+  const conSigno = (v, dec) => {
+    const t = Math.abs(v).toLocaleString('es-AR', { minimumFractionDigits: dec, maximumFractionDigits: dec });
+    return /[1-9]/.test(t) ? (v > 0 ? '+' : '-') + t : '0';
+  };
+  const pct = (v) => (v == null ? 'sin dato' : conSigno(v, 2) + '%');
   const share = (v) => (v == null ? 'sin dato'
     : v.toLocaleString('es-AR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + '%');
+  const pts = (v) => (v == null ? 'sin dato' : conSigno(v, 2) + ' pts');
+  // Las marcas de un eje llevan los decimales que pide su paso, todas los mismos:
+  // con paso 0,02 y un solo decimal el eje decia "0 · 0 · 0 · 0,1 · 0,1".
+  const decimalesDe = (paso) => Math.max(0, -Math.floor(Math.log10(paso) + 1e-9));
+  const formatoEje = (escala, n) => {
+    const dec = decimalesDe(d3.tickStep(...escala.domain(), n));
+    return (d) => (Math.abs(d) < 1e-12 ? '0'
+      : d.toLocaleString('es-AR', { minimumFractionDigits: dec, maximumFractionDigits: dec }));
+  };
+  // Cuantas marcas lleva un eje horizontal: una cada 90 px, entre 2 y 5. Sin el
+  // tope, en una pantalla ancha salian 19 (0,000 · 0,005 · … · 0,090).
+  const cantidadMarcas = (ancho) => Math.max(2, Math.min(5, Math.floor(ancho / 90)));
   const enc = (s) => String(s).replace(/%/g, '%25').replace(/&/g, '%26').replace(/=/g, '%3D').replace(/,/g, '%2C');
   const fecha = (iso) => { const [y, m, d] = iso.split('-'); return `${Number(d)}/${Number(m)}`; };
   const nombreMes = (p) => { const [y, m] = p.split('-'); return `${MESES[Number(m) - 1]} ${y}`; };
   const etiqueta = (r) => (r.ventana === 'semanal'
     ? `Semana del ${fecha(r.desde)} al ${fecha(r.hasta)}/${r.hasta.slice(0, 4)}`
     : nombreMes(r.periodo));
-  const corto = (r) => (r.ventana === 'semanal' ? fecha(r.desde) : MESES[Number(r.periodo.slice(5)) - 1].slice(0, 3));
   const contra = (r) => (r.ventana === 'semanal' ? 'contra la semana anterior' : `contra ${nombreMes(r.base)}`);
   const nombreRubro = (serie) => serie.replace(/^\d\d /, '');
   const ORDEN_INDEC = ['rubro', 'agregado', 'clase', 'producto'];
@@ -168,6 +194,25 @@
         ventana: r.ventana, periodo: r.periodo, division: r.division,
         de_la_division_pct: (Number(r.cobertura_ipc_pct) / Number(r.peso_division_pct)) * 100,
       })),
+  });
+
+  dash.calc('clases_del_rubro', {
+    inputs: ['clases'],
+    title: 'Aporte de cada clase',
+    description: 'Peso de cada clase dentro de su rubro y los puntos que aporta: su variación por ese peso; sumados dan la variación del rubro.',
+    fn: (clases) => {
+      const clave = (r) => `${r.ventana}|${r.periodo}|${r.division}`;
+      const total = {};
+      clases.forEach((r) => { total[clave(r)] = (total[clave(r)] || 0) + Number(r.peso); });
+      return clases.map((r) => {
+        const peso = Number(r.peso) / total[clave(r)];
+        return {
+          ventana: r.ventana, periodo: r.periodo, division: r.division, clase: r.clase, nombre: r.nombre,
+          variacion_pct: Number(r.variacion_pct), peso_en_rubro_pct: peso * 100,
+          aporte_pts: peso * Number(r.variacion_pct),
+        };
+      });
+    },
   });
 
   const segs = [...document.querySelectorAll('.ip-seg button')];
@@ -234,18 +279,70 @@
     }));
   }
 
+  const corta = (s, n) => (s.length > n ? s.slice(0, n - 1) + '…' : s);
+  const lineaTip = (texto, color) => {
+    const l = document.createElement('div');
+    if (color) { const sw = document.createElement('span'); sw.className = 'ip-sw'; sw.style.background = color; l.append(sw); }
+    l.append(texto);
+    return l;
+  };
+
+  // Un grafico de filas: una por item, su nombre a la izquierda, el eje
+  // horizontal con su titulo y el cero marcado. `dibujarFila` pone las marcas y
+  // recibe dónde va la columna de valores (`fin`) y con cuántos decimales (`dec`).
+  function graficoDeFilas(box, items, valores, titulo, dibujarFila, tooltip) {
+    box.replaceChildren();
+    if (!items.length) return;
+    const W = Math.max(280, box.clientWidth), fila = 28, arriba = 4, abajo = 40;
+    const H = arriba + items.length * fila + abajo;
+    const svg = d3.select(box).append('svg').attr('width', '100%').attr('viewBox', `0 0 ${W} ${H}`);
+    const nombres = svg.append('g').selectAll('text').data(items).join('text')
+      .text((d) => corta(d.nombre, W < 520 ? 18 : 34))
+      .style('fill', 'var(--color-fg)').style('font-size', 'var(--cds-font-size-caption)');
+    let ancho = 0;
+    nombres.each(function () { ancho = Math.max(ancho, this.getComputedTextLength()); });
+    const y = (i) => arriba + i * fila + fila / 2;
+    nombres.attr('x', 0).attr('y', (_, i) => y(i) + 4);
+    const izq = ancho + 16, der = 72;
+    const x = d3.scaleLinear([Math.min(0, d3.min(valores)), Math.max(0, d3.max(valores))], [izq, W - der]).nice();
+    const n = cantidadMarcas(W - izq - der);
+    const eje = svg.append('g').attr('transform', `translate(0,${H - abajo})`)
+      .call(d3.axisBottom(x).ticks(n).tickFormat(formatoEje(x, n)))
+      .attr('font-size', null).attr('font-family', null);
+    svg.append('text').attr('x', izq).attr('y', H - 4)
+      .style('fill', 'var(--color-fg-muted)').style('font-size', 'var(--cds-font-size-caption)').text(titulo);
+    const dec = Math.min(3, decimalesDe(d3.tickStep(...x.domain(), n)) + 1);
+    eje.select('.domain').remove();
+    eje.selectAll('line').attr('y1', 0).attr('y2', -(H - abajo - arriba)).style('stroke', 'var(--cds-chart-grid)');
+    eje.selectAll('text').style('fill', 'var(--color-fg-muted)').style('font-size', 'var(--cds-font-size-caption)');
+    svg.append('line').attr('x1', x(0)).attr('x2', x(0)).attr('y1', arriba).attr('y2', H - abajo)
+      .style('stroke', 'var(--cds-chart-axis)');
+    items.forEach((d, i) => dibujarFila(svg, d, y(i), x, { fin: W - 8, dec }));
+    const tipFilas = document.createElement('div');
+    tipFilas.className = 'ip-tip'; tipFilas.hidden = true;
+    box.append(tipFilas);
+    svg.append('g').selectAll('rect').data(items).join('rect')
+      .attr('x', 0).attr('width', W).attr('y', (_, i) => arriba + i * fila).attr('height', fila)
+      .style('fill', 'transparent')
+      .on('mousemove', (ev, d) => {
+        tipFilas.replaceChildren(...tooltip(d));
+        tipFilas.hidden = false;
+        const [mx, my] = d3.pointer(ev, box);
+        tipFilas.style.left = `${Math.min(Math.max(0, mx + 12), box.clientWidth - tipFilas.offsetWidth)}px`;
+        tipFilas.style.top = `${my + 14}px`;
+      })
+      .on('mouseleave', () => { tipFilas.hidden = true; });
+  }
+
   function dibujarClases(v, p, div) {
-    const c = dash.data('clases');
+    const c = dash.data('clases_del_rubro');
     const filas = (c.status === 'ok' ? c.data : [])
-      .filter((r) => r.ventana === v && r.periodo === p && r.division === div)
-      .sort((a, b) => a.clase.localeCompare(b.clase));
+      .filter((r) => r.ventana === v && r.periodo === p && r.division === div);
     const tbody = document.querySelector('.ip-clases tbody');
-    tbody.replaceChildren(...filas.map((r) => {
+    tbody.replaceChildren(...[...filas].sort((a, b) => a.clase.localeCompare(b.clase)).map((r) => {
       const tr = document.createElement('tr');
       tr.dataset.key = `${enc(r.ventana)},${enc(r.periodo)},${enc(r.clase)}`;
-      const celdas = [r.clase, r.nombre, pct(num(r.variacion_pct)),
-        num(r.peso) == null ? 'sin dato' : share(num(r.peso) * 100)];
-      celdas.forEach((t, i) => {
+      [r.clase, r.nombre, pct(r.variacion_pct), share(r.peso_en_rubro_pct), pts(r.aporte_pts)].forEach((t, i) => {
         const td = document.createElement('td'); td.textContent = t;
         if (i >= 2) td.className = 'ip-num';
         tr.append(td);
@@ -253,6 +350,23 @@
       return tr;
     }));
     document.querySelector('.ip-clases-vacio').hidden = filas.length > 0;
+    const color = dash.colors[2];
+    const items = [...filas].sort((a, b) => b.aporte_pts - a.aporte_pts);
+    graficoDeFilas(document.getElementById('grafico-aportes'), items, items.map((d) => d.aporte_pts),
+      'puntos de la variación del rubro',
+      (svg, d, cy, x, { fin, dec }) => {
+        const x0 = x(0), x1 = x(d.aporte_pts);
+        svg.append('rect').attr('x', Math.min(x0, x1)).attr('width', Math.max(1, Math.abs(x1 - x0)))
+          .attr('y', cy - 6).attr('height', 12).attr('rx', 2).style('fill', color);
+        svg.append('text').attr('x', fin).attr('y', cy + 4).attr('text-anchor', 'end')
+          .style('fill', 'var(--color-fg-muted)').style('font-size', 'var(--cds-font-size-caption)')
+          .text(conSigno(d.aporte_pts, dec));
+      },
+      (d) => [lineaTip(`${d.clase} ${d.nombre}`), lineaTip(`Variación ${pct(d.variacion_pct)}`),
+        lineaTip(`Peso en el rubro ${share(d.peso_en_rubro_pct)}`), lineaTip(`Aporta ${pts(d.aporte_pts)}`, color)]);
+    const suma = document.querySelector('.ip-aportes-suma');
+    suma.textContent = filas.length
+      ? `Suma de los aportes: ${pts(d3.sum(filas, (r) => r.aporte_pts))}, la variación del rubro.` : '';
   }
 
   function dibujarIndec(v, p, div) {
@@ -269,10 +383,7 @@
     tbody.replaceChildren(...filas.map((r) => {
       const tr = document.createElement('tr');
       tr.dataset.key = `${enc(r.periodo)},${enc(r.tipo)},${enc(r.codigo)}`;
-      [r.codigo, r.nombre, pct(num(r.nuestro_pct)), pct(num(r.indec_pct)),
-        num(r.diferencia) == null ? 'sin dato'
-          : (num(r.diferencia) > 0 ? '+' : num(r.diferencia) < 0 ? '-' : '')
-            + Math.abs(num(r.diferencia)).toLocaleString('es-AR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' pts',
+      [r.codigo, r.nombre, pct(num(r.nuestro_pct)), pct(num(r.indec_pct)), pts(num(r.diferencia)),
         r.nota].forEach((t, i) => {
         const td = document.createElement('td'); td.textContent = t;
         if (i >= 2 && i <= 4) td.className = 'ip-num';
@@ -281,6 +392,28 @@
       return tr;
     }));
     vacio.hidden = filas.length > 0;
+    const clases = filas.filter((r) => r.tipo === 'clase' && num(r.nuestro_pct) != null && num(r.indec_pct) != null)
+      .map((r) => ({ codigo: r.codigo, nombre: r.nombre, nuestro: num(r.nuestro_pct), indec: num(r.indec_pct),
+        diferencia: num(r.nuestro_pct) - num(r.indec_pct) }))
+      .sort((a, b) => Math.abs(b.diferencia) - Math.abs(a.diferencia));
+    document.querySelector('.ip-indec-grafico').hidden = !clases.length;
+    document.querySelector('.ip-sw-nuestro').style.background = dash.colors[0];
+    graficoDeFilas(document.getElementById('grafico-indec'), clases,
+      clases.flatMap((d) => [d.nuestro, d.indec]),
+      'variación del mes, %',
+      (svg, d, cy, x, { fin, dec }) => {
+        svg.append('line').attr('x1', x(d.indec)).attr('x2', x(d.nuestro)).attr('y1', cy).attr('y2', cy)
+          .style('stroke', 'var(--cds-chart-muted)').style('stroke-width', 2);
+        [[d.indec, 'var(--cds-chart-muted)'], [d.nuestro, dash.colors[0]]].forEach(([val, color]) => {
+          svg.append('circle').attr('cx', x(val)).attr('cy', cy).attr('r', 5)
+            .style('fill', color).style('stroke', 'var(--color-panel)').style('stroke-width', 2);
+        });
+        svg.append('text').attr('x', fin).attr('y', cy + 4).attr('text-anchor', 'end')
+          .style('fill', 'var(--color-fg-muted)').style('font-size', 'var(--cds-font-size-caption)')
+          .text(conSigno(d.diferencia, dec));
+      },
+      (d) => [lineaTip(`${d.codigo} ${d.nombre}`), lineaTip(`Nuestro ${pct(d.nuestro)}`, dash.colors[0]),
+        lineaTip(`INDEC ${pct(d.indec)}`, 'var(--cds-chart-muted)'), lineaTip(`Diferencia ${pts(d.diferencia)}`)]);
     vacio.textContent = v !== 'mensual'
       ? 'La comparación con el INDEC es mensual: elegí Meses.'
       : 'Todavía no hay comparación para este mes: sale cuando el INDEC lo publica.';
@@ -289,78 +422,145 @@
   const tip = document.createElement('div');
   tip.className = 'ip-tip'; tip.hidden = true;
 
-  function dibujarGrafico(filas, v, rubro) {
+  // El grafico ubica cada periodo en el medio de sus fechas, asi semanas y meses
+  // comparten el mismo eje de tiempo.
+  const DIA = 86400000;
+  const lunesISO = (anio, semana) => {
+    const ene4 = Date.UTC(anio, 0, 4);
+    return ene4 - ((new Date(ene4).getUTCDay() + 6) % 7) * DIA + (semana - 1) * 7 * DIA;
+  };
+  const rango = (periodo) => {
+    if (periodo.includes('-W')) {
+      const [a, s] = periodo.split('-W').map(Number);
+      const l = lunesISO(a, s);
+      return [l, l + 6 * DIA];
+    }
+    const [a, m] = periodo.split('-').map(Number);
+    return [Date.UTC(a, m - 1, 1), Date.UTC(a, m, 1) - DIA];
+  };
+  const medio = (periodo) => { const [d, h] = rango(periodo); return new Date((d + h + DIA) / 2); };
+  const iso = (t) => new Date(t).toISOString().slice(0, 10);
+  const etiquetaDe = (ventana, periodo) => {
+    const [d, h] = rango(periodo);
+    return etiqueta({ ventana, periodo, desde: iso(d), hasta: iso(h) });
+  };
+  const nivelTxt = (n) => n.toLocaleString('es-AR', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+
+  // Los puntos de una serie: su indice encadenado, con el periodo base en 100.
+  // Si la cadena se corta (un periodo sin dato), arranca de nuevo en 100.
+  function puntosDe(filas) {
+    const serie = [];
+    filas.filter((r) => r.nivel != null && r.variacion_pct != null)
+      .sort((a, b) => a.periodo.localeCompare(b.periodo))
+      .forEach((r) => {
+        const prev = serie[serie.length - 1];
+        if (!prev || prev.periodo !== r.base) {
+          if (prev) serie.push(null);
+          serie.push({ periodo: r.base, nivel: r.nivel / (1 + r.variacion_pct / 100), v: null });
+        }
+        serie.push({ periodo: r.periodo, nivel: r.nivel, v: r.variacion_pct });
+      });
+    return serie;
+  }
+
+  function dibujarGrafico(todas, v, rubro, elegido) {
     const box = document.getElementById('grafico');
-    const periodos = [...new Set(filas.map((r) => r.periodo))].sort();
-    const series = [
+    const nota = document.querySelector('.ip-graf-nota');
+    const defs = [
       { nombre: 'Global', tipo: 'global' },
-      { nombre: 'Sin online', tipo: 'sin_online' },
+      { nombre: 'Sin online', tipo: 'sin_online', guiones: true },
       ...(rubro ? [{ nombre: nombreRubro(rubro.serie), tipo: 'rubro', division: rubro.division }] : []),
-    ].map((s, i) => ({
-      ...s, color: dash.colors[i],
-      puntos: periodos.map((p) => {
-        const r = filas.find((f) => f.periodo === p && f.tipo === s.tipo && (s.tipo !== 'rubro' || f.division === s.division));
-        return { periodo: p, fila: r, v: r ? r.variacion_pct : null };
-      }),
-    })).filter((s) => s.puntos.some((d) => d.v != null));
+    ].map((s, i) => ({ ...s, color: dash.colors[i] }));
+    const filasDeSerie = (s, ventana) => todas.filter((f) => f.ventana === ventana && f.tipo === s.tipo
+      && (s.tipo !== 'rubro' || f.division === s.division));
+    // La escala sale de las dos ventanas: no cambia al pasar de semanas a meses.
+    const enAmbas = defs.flatMap((s) => ['semanal', 'mensual'].flatMap((w) => puntosDe(filasDeSerie(s, w))))
+      .filter(Boolean);
+    const series = defs.map((s) => ({ ...s, puntos: puntosDe(filasDeSerie(s, v)) }))
+      .filter((s) => s.puntos.length);
     box.replaceChildren();
-    if (!periodos.length || !series.length) {
+    nota.textContent = '';
+    if (!series.length) {
       const p = document.createElement('p'); p.className = 'ip-sub';
       p.textContent = 'Todavía no hay períodos con dato en esta ventana.';
       box.append(p); return;
     }
-    const W = Math.max(280, box.clientWidth), H = 260;
-    const vals = series.flatMap((s) => s.puntos.map((d) => d.v)).filter((x) => x != null);
-    const y = d3.scaleLinear([Math.min(0, d3.min(vals)), Math.max(0, d3.max(vals))], [H - 28, 12]).nice();
-    const svg = d3.select(box).append('svg').attr('width', '100%').attr('viewBox', `0 0 ${W} ${H}`);
-    const ejeY = svg.append('g').call(d3.axisLeft(y).ticks(5).tickFormat((d) => pct(d).replace('%', '')))
+    const W = Math.max(280, box.clientWidth), H = 260, abajo = 24, arriba = 12;
+    const niveles = enAmbas.map((d) => d.nivel).concat(100);
+    const margen = Math.max(0.5, (d3.max(niveles) - d3.min(niveles)) * 0.05);
+    const y = d3.scaleLinear([d3.min(niveles) - margen, d3.max(niveles) + margen], [H - abajo, arriba]).nice();
+    const svg = d3.select(box).append('svg').attr('width', '100%').attr('viewBox', `0 0 ${W} ${H}`)
+      .attr('role', 'img').attr('aria-label', 'Índice encadenado de cada serie, 100 en su período base');
+    const ejeY = svg.append('g').call(d3.axisLeft(y).ticks(5).tickFormat(formatoEje(y, 5)))
       .attr('font-size', null).attr('font-family', null);
+    ejeY.selectAll('text').style('fill', 'var(--color-fg-muted)').style('font-size', 'var(--cds-font-size-caption)');
     let ancho = 0;
     ejeY.selectAll('text').each(function () { ancho = Math.max(ancho, this.getComputedTextLength()); });
-    const izq = ancho + 14, der = 96;
+    const izq = ancho + 14, der = 110;
     ejeY.attr('transform', `translate(${izq},0)`);
-    ejeY.selectAll('text').attr('fill', 'var(--color-fg-muted)').attr('font-size', 'var(--cds-font-size-caption)');
-    ejeY.selectAll('line').attr('stroke', 'var(--cds-chart-grid)').attr('x2', W - izq - der);
+    ejeY.selectAll('line').style('stroke', 'var(--cds-chart-grid)').attr('x2', W - izq - der);
     ejeY.select('.domain').remove();
-    const x = d3.scalePoint(periodos, [izq + 8, W - der]).padding(0.2);
-    svg.append('line').attr('x1', izq).attr('x2', W - der).attr('y1', y(0)).attr('y2', y(0))
-      .attr('stroke', 'var(--cds-chart-axis)');
-    const paso = Math.ceil(periodos.length / Math.max(1, Math.floor((W - izq - der) / 56)));
-    svg.append('g').selectAll('text').data(periodos.filter((_, i) => i % paso === 0)).join('text')
-      .attr('x', (p) => x(p)).attr('y', H - 8).attr('text-anchor', 'middle')
-      .attr('fill', 'var(--color-fg-muted)').attr('font-size', 'var(--cds-font-size-caption)')
-      .text((p) => corto(filas.find((f) => f.periodo === p)));
-    const linea = d3.line().defined((d) => d.v != null).x((d) => x(d.periodo)).y((d) => y(d.v));
+    const x = d3.scaleUtc(d3.extent(enAmbas, (d) => medio(d.periodo)), [izq + 12, W - der]);
+    svg.append('line').attr('x1', izq).attr('x2', W - der).attr('y1', y(100)).attr('y2', y(100))
+      .style('stroke', 'var(--cds-chart-axis)');
+    const meses = x.ticks(d3.utcMonth.every(1));
+    const paso = Math.ceil(meses.length / Math.max(1, Math.floor((W - izq - der) / 48)));
+    svg.append('g').selectAll('text').data(meses.filter((_, i) => i % paso === 0)).join('text')
+      .attr('x', (t) => x(t)).attr('y', H - 6).attr('text-anchor', 'middle')
+      .style('fill', 'var(--color-fg-muted)').style('font-size', 'var(--cds-font-size-caption)')
+      .text((t) => MESES[t.getUTCMonth()].slice(0, 3));
+    if (elegido) {
+      svg.append('line').attr('x1', x(medio(elegido))).attr('x2', x(medio(elegido)))
+        .attr('y1', arriba).attr('y2', H - abajo)
+        .style('stroke', 'var(--cds-chart-reference)');
+    }
+    const regla = svg.append('line').attr('y1', arriba).attr('y2', H - abajo)
+      .style('stroke', 'var(--cds-chart-axis)').style('visibility', 'hidden');
+    const linea = d3.line().defined((d) => d != null).x((d) => x(medio(d.periodo))).y((d) => y(d.nivel));
+    const finales = [];
     series.forEach((s) => {
-      svg.append('path').datum(s.puntos).attr('d', linea).attr('fill', 'none')
-        .attr('stroke', s.color).attr('stroke-width', 2).attr('stroke-linecap', 'round').attr('stroke-linejoin', 'round');
-      svg.append('g').selectAll('circle').data(s.puntos.filter((d) => d.v != null)).join('circle')
-        .attr('cx', (d) => x(d.periodo)).attr('cy', (d) => y(d.v)).attr('r', 3).attr('fill', s.color);
-      const ultimo = [...s.puntos].reverse().find((d) => d.v != null);
-      svg.append('text').attr('x', x(ultimo.periodo) + 8).attr('y', y(ultimo.v) + 4)
-        .attr('fill', s.color).attr('font-size', 'var(--cds-font-size-caption)').text(s.nombre);
+      svg.append('path').datum(s.puntos).attr('d', linea).style('fill', 'none')
+        .style('stroke', s.color).style('stroke-width', 2).style('stroke-linecap', 'round')
+        .style('stroke-linejoin', 'round').style('stroke-dasharray', s.guiones ? '6 5' : null);
+      svg.append('g').selectAll('circle').data(s.puntos.filter(Boolean)).join('circle')
+        .attr('cx', (d) => x(medio(d.periodo))).attr('cy', (d) => y(d.nivel)).attr('r', 3).style('fill', s.color);
+      const ultimo = s.puntos.filter(Boolean).pop();
+      finales.push({ s, x: x(medio(ultimo.periodo)) + 8, y: y(ultimo.nivel) + 4 });
     });
+    // Series que terminan en el mismo valor: sus nombres se apilan en vez de pisarse.
+    finales.sort((a, b) => a.y - b.y).forEach((f, i, arr) => {
+      if (i && f.y - arr[i - 1].y < 14) f.y = arr[i - 1].y + 14;
+      svg.append('text').attr('x', f.x).attr('y', f.y)
+        .style('fill', f.s.color).style('font-size', 'var(--cds-font-size-caption)').text(f.s.nombre);
+    });
+    const [glob, sinOn] = ['global', 'sin_online'].map((t) => series.find((s) => s.tipo === t));
+    if (glob && sinOn && glob.puntos.length === sinOn.puntos.length
+        && glob.puntos.every((d, i) => (d == null ? sinOn.puntos[i] == null
+          : sinOn.puntos[i] && Math.abs(d.nivel - sinOn.puntos[i].nivel) < 1e-9))) {
+      nota.textContent = 'Global y sin online van superpuestos: en esta ventana todavía no hay períodos con online.';
+    }
+    const periodos = [...new Set(series.flatMap((s) => s.puntos.filter(Boolean).map((d) => d.periodo)))];
     box.append(tip);
     svg.on('mousemove', (ev) => {
       const [mx] = d3.pointer(ev);
-      const p = periodos.reduce((a, b) => (Math.abs(x(b) - mx) < Math.abs(x(a) - mx) ? b : a));
-      const f = filas.find((r) => r.periodo === p);
+      const p = periodos.reduce((a, b) => (Math.abs(x(medio(b)) - mx) < Math.abs(x(medio(a)) - mx) ? b : a));
+      regla.attr('x1', x(medio(p))).attr('x2', x(medio(p))).style('visibility', 'visible');
       tip.replaceChildren();
-      const cuando = document.createElement('div'); cuando.className = 'ip-tip-when'; cuando.textContent = etiqueta(f);
+      const cuando = document.createElement('div'); cuando.className = 'ip-tip-when'; cuando.textContent = etiquetaDe(v, p);
       tip.append(cuando);
       series.forEach((s) => {
-        const d = s.puntos.find((q) => q.periodo === p);
+        const d = s.puntos.find((q) => q && q.periodo === p);
         const l = document.createElement('div');
         const sw = document.createElement('span'); sw.className = 'ip-sw'; sw.style.background = s.color;
-        l.append(sw, `${s.nombre}: ${pct(d.v)}`);
+        l.append(sw, `${s.nombre}: ${d ? nivelTxt(d.nivel) + (d.v == null ? ' (base)' : ` (${pct(d.v)})`) : 'sin dato'}`);
         tip.append(l);
       });
       tip.hidden = false;
       const bw = box.clientWidth, tw = tip.offsetWidth;
-      const px = (x(p) / W) * bw;
+      const px = (x(medio(p)) / W) * bw;
       tip.style.left = `${Math.min(Math.max(0, px + 12), bw - tw)}px`;
       tip.style.top = '8px';
-    }).on('mouseleave', () => { tip.hidden = true; });
+    }).on('mouseleave', () => { tip.hidden = true; regla.style('visibility', 'hidden'); });
   }
 
   dash.onData(() => {
@@ -370,7 +570,8 @@
     segs.forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.v === v)));
     const take = document.querySelector('.ip-take-js');
     if (d.status !== 'ok') { take.textContent = ''; return; }
-    const filas = filasDe(d.data).filter((r) => r.ventana === v);
+    const todas = filasDe(d.data);
+    const filas = todas.filter((r) => r.ventana === v);
     const periodos = [...new Set(filas.map((r) => r.periodo))].sort().reverse();
     const p = periodos.includes(params.periodo) ? params.periodo : periodos[0];
     const ref = filas.find((r) => r.periodo === p);
@@ -407,7 +608,7 @@
       ? `${nombreRubro(rubro.serie)}: ${etiqueta(ref).toLowerCase()}` : 'Clases del rubro';
     dibujarClases(v, p, elegido);
     dibujarIndec(v, p, elegido);
-    dibujarGrafico(filas, v, rubro);
+    dibujarGrafico(todas, v, rubro, p);
   });
 })();
 </script>

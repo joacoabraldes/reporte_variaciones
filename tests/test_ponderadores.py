@@ -131,6 +131,21 @@ def test_el_peso_es_la_participacion_dentro_de_la_clase():
     assert p["A0111304"][1] == pytest.approx(300.0)
 
 
+def test_una_venta_de_usados_no_entra_al_peso():
+    """La ENGHo resta la venta de una bicicleta usada (gasto negativo) en la misma clase.
+
+    Medimos precios de compra: el peso sale de lo que se compra. Con la venta en
+    el denominador, la compra pesaba 113% de su clase.
+    """
+    con = _con_sintetica([
+        (1, "A0713", "A0713101", 1.0, 113.0),    # compra de bicicleta
+        (1, "A0713", "A0713201", 1.0, -13.0),    # venta de bicicleta usada
+    ])
+    p = pesos_por_articulo(con, "GBA")
+    assert p["A0713101"][0] == pytest.approx(1.0)
+    assert "A0713201" not in p
+
+
 def test_el_factor_de_expansion_pesa():
     """Un hogar que representa a 10 pesa 10 veces mas que uno que representa a 1."""
     con = _con_sintetica([
@@ -275,6 +290,8 @@ def test_un_articulo_compartido_no_cuenta_doble_en_la_cobertura():
 CLASES_SEPA = {
     "01.1.1", "01.1.2", "01.1.3", "01.1.4", "01.1.5", "01.1.6", "01.1.7",
     "01.1.8", "01.1.9", "01.2.1", "01.2.2",
+    # Vinos, cerveza y limpieza, desde el 27/10/2026.
+    "02.1.2", "02.1.3", "05.6.1",
 }
 # Ropa y calzado de las tiendas online: categorias `online.<prenda>_<genero>`.
 CLASES_ONLINE = {"03.1.2", "03.2.1"}
@@ -283,21 +300,31 @@ CLASES_ONLINE = {"03.1.2", "03.2.1"}
 CLASES_RUBROS = {
     "04.3.1", "05.1", "05.3", "05.5", "06.1.1", "06.1.2", "09.1.1", "09.1.3",
     "09.3.4", "12.1.3",
+    # Fravega, 30/10/2026: camaras, memorias, neumaticos, bicicletas y deporte.
+    "09.1.2", "09.1.4", "07.2.1", "07.1.3", "09.3.1", "09.3.2",
 }
 CLASES_COMBUSTIBLES = {"07.2.2"}
-CLASES_TAXONOMIA = CLASES_SEPA | CLASES_ONLINE | CLASES_RUBROS | CLASES_COMBUSTIBLES
+# Tarifas y precios publicados, desde el 30/10/2026: servicio domestico,
+# prepagas, alquileres y colectivo.
+CLASES_TARIFAS = {"05.6.2", "06.4", "04.1.1", "07.3.2"}
+CLASES_TAXONOMIA = (CLASES_SEPA | CLASES_ONLINE | CLASES_RUBROS | CLASES_COMBUSTIBLES
+                    | CLASES_TARIFAS)
 
 
 def test_el_mapeo_del_repo_es_coherente_con_la_taxonomia():
-    """La clase del indice de cada articulo tiene que ser una de las 24 de la taxonomia.
+    """La clase del indice de cada articulo tiene que ser una de las 37 de la taxonomia.
 
     Eran 6 clases y 23 categorias hasta 10/2026; se sumaron carnes, pescados,
     frutas, verduras y aguas/gaseosas/jugos (41 categorias, 15,79% del IPC),
     despues ropa y calzado online (32 categorias), y el 21/10 el resto de lo
-    online (53 rubros) y los combustibles (5).
+    online (53 rubros) y los combustibles (5). El 26/10, 12 de verduras
+    envasadas (congeladas, secas y en conserva). El 27/10, vinos, cerveza y
+    limpieza (17 categorias, 3,40% del IPC). El 30/10, el servicio domestico
+    (4 categorias de tarifas, 1,79%), y prepagas, alquileres y colectivo (3), y
+    8 rubros de Fravega.
     """
     mapeo = cargar_mapeo()
-    assert len(mapeo) == 154
+    assert len(mapeo) == 198
     clases = {clase_del_indice(s["articulo"]) for s in mapeo.values()}
     assert clases == CLASES_TAXONOMIA
 
@@ -309,7 +336,8 @@ def test_el_mapeo_del_repo_es_coherente_con_la_taxonomia():
     assert clases_de("online.", ropa) == CLASES_ONLINE
     assert clases_de("online.", lambda a: not ropa(a)) == CLASES_RUBROS
     assert clases_de("combustibles.") == CLASES_COMBUSTIBLES
-    assert sum(1 for c in mapeo if c.startswith("online.")) == 32 + 53
+    assert clases_de("tarifas.") == CLASES_TARIFAS
+    assert sum(1 for c in mapeo if c.startswith("online.")) == 32 + 53 + 8
 
 
 @pytest.mark.skipif(
@@ -326,11 +354,11 @@ def test_los_pesos_reales_cierran_y_son_plausibles():
     con = conectar()
     try:
         pesos = calcular("GBA", con=con)
-        # 154 categorias sobre 149 articulos: cinco los comparten de a dos
+        # 198 categorias sobre 193 articulos: cinco los comparten de a dos
         # (harina 000/0000, yerba 500 g/1 kg, yogur firme/bebible, lechuga
         # por kilo/por unidad, y malla/short de hombre).
-        assert len(pesos) == 149
-        assert sum(len(p.categorias) for p in pesos) == 154
+        assert len(pesos) == 193
+        assert sum(len(p.categorias) for p in pesos) == 198
         assert all(0.0 < p.peso_en_clase <= 1.0 for p in pesos)
 
         por_cat = {c: p for p in pesos for c in p.categorias}
@@ -349,6 +377,14 @@ def test_los_pesos_reales_cierran_y_son_plausibles():
         assert por_cat["verduras.papa"].peso_en_clase > 0.10
         # Las dos lechugas comparten articulo: un solo peso, no dos.
         assert por_cat["verduras.lechuga"] is por_cat["verduras.lechuga_unidad"]
+        # El vino fino pesa mas que el comun; la cerveza es toda su clase; el
+        # jabon liquido para ropa es lo mas pesado de limpieza.
+        assert (por_cat["alcohol.vino_fino"].peso_en_clase
+                > por_cat["alcohol.vino_comun"].peso_en_clase)
+        assert por_cat["alcohol.cerveza"].peso_en_clase == pytest.approx(1.0)
+        limpieza = [p for c, p in por_cat.items() if c.startswith("limpieza.")]
+        assert max(limpieza, key=lambda p: p.peso_en_clase) is por_cat[
+            "limpieza.jabon_liquido_ropa"]
 
         cob = cobertura_por_clase(pesos, con=con)
         assert set(cob) == CLASES_TAXONOMIA

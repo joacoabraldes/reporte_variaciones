@@ -1,0 +1,36 @@
+# Las carnicerias del IPCVA: que corte del informe va con cada articulo de la ENGHo.
+#
+# El informe mensual de precios de la carne vacuna del IPCVA (tablas 3, 5 y 7)
+# trae 22 cortes vacunos en tres plazas. Se usan los que tienen un articulo de la
+# ENGHo que el indice ya mide desde SEPA: el canal tradicional se COMBINA con el
+# de supermercados (reporte.carnicerias, operacion 5 de la ruta critica), no
+# agrega articulos.
+#
+# Cortes del IPCVA que quedan afuera por ahora, porque SEPA no tiene su
+# articulo: carnaza, cuadrada, falda, lomo, matambre, osobuco, peceto, roast
+# beef, tortuguita. Sumarlos es medir mas de la clase 01.1.2, y es otro cambio.
+# La milanesa (A0112129) no tiene corte: es un preparado.
+#
+# Verificado el 28/10/2026 contra el informe de septiembre de 2026.
+
+pares:
+  A0112102: Asado de tira       # Asado
+  A0112103: Bife ancho
+  A0112104: Bife angosto
+  A0112106: Bola de lomo
+  A0112108: Picada común        # la ENGHo no separa comun de especial; el INDEC
+                                # publica el precio de la comun
+  A0112110: Cuadril
+  A0112116: Nalga
+  A0112117: Paleta
+  A0112121: Vacío
+  # A0112105 Bife de chorizo: el IPCVA no lo releva aparte (es el bife angosto
+  # sin hueso). Queda con SEPA solo antes que suponer que es el mismo precio.
+
+# Plaza del IPCVA -> region del INDEC. AMBA es CABA y los partidos del GBA (el
+# IPCVA lo parte en Capital, Norte, Oeste y Sur). Las regiones que no estan
+# toman GBA y Pampeana juntas, con los pesos regionales.
+plazas:
+  AMBA: GBA
+  Rosario: Pampeana
+  Córdoba: Pampeana

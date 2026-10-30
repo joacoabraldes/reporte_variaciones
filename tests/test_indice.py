@@ -252,7 +252,7 @@ def test_los_outliers_se_miden_sobre_log_ratio_y_son_simetricos():
 
 
 # --------------------------------------------------------------------------- #
-# CRITICO 5 de 9: categorias elementales -> clases COICOP
+# CRITICO 6 de 10: categorias elementales -> clases COICOP
 #
 # Era la unica de las ocho operaciones criticas sin un solo test, y es donde se
 # perdian categorias en silencio. Los numeros de abajo estan hechos a mano.
@@ -314,7 +314,7 @@ def test_las_categorias_a_clases_sin_nada_que_agregar():
 
 
 def test_una_clase_de_la_taxonomia_sin_ponderador_se_detecta():
-    """La guarda de la operacion 7.
+    """La guarda de la operacion 8.
 
     Sin esto la clase se excluye sola, no entra al denominador, y la cobertura
     sigue informando 100% sobre una canasta mas chica.
@@ -543,12 +543,14 @@ def test_los_factores_reales_son_todos_mayores_a_uno():
     f = factores_actualizacion("nacional")
     # Las 11 clases de la division alimentos (las 6 del piloto mas carnes,
     # pescados, frutas, verduras y aguas/gaseosas/jugos, 10/2026), ropa y
-    # calzado, y desde el 21/10 el resto de lo online y los combustibles.
+    # calzado, y desde el 21/10 el resto de lo online y los combustibles. Desde
+    # el 27/10, vinos, cerveza y limpieza, de SEPA.
     assert set(f) == {
         "01.1.1", "01.1.2", "01.1.3", "01.1.4", "01.1.5", "01.1.6", "01.1.7",
-        "01.1.8", "01.1.9", "01.2.1", "01.2.2", "03.1.2", "03.2.1",
-        "04.3.1", "05.1", "05.3", "05.5", "06.1.1", "06.1.2", "07.2.2",
-        "09.1.1", "09.1.3", "09.3.4", "12.1.3",
+        "01.1.8", "01.1.9", "01.2.1", "01.2.2", "02.1.2", "02.1.3", "03.1.2",
+        "03.2.1", "04.1.1", "04.3.1", "05.1", "05.3", "05.5", "05.6.1", "05.6.2",
+        "06.1.1", "06.1.2", "06.4", "07.1.3", "07.2.1", "07.2.2", "07.3.2", "09.1.1",
+        "09.1.2", "09.1.3", "09.1.4", "09.3.1", "09.3.2", "09.3.4", "12.1.3",
     }
     # Base diciembre 2016 = 100 y desde entonces los precios subieron mucho.
     assert all(v > 50 for v in f.values()), f
@@ -567,7 +569,7 @@ def test_los_factores_salen_en_las_seis_regiones(region):
     from reporte.ponderadores import factores_actualizacion
 
     f = factores_actualizacion(region)
-    assert len(f) == 24
+    assert len(f) == 37
     assert all(v > 50 for v in f.values()), f
 
 

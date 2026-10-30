@@ -1,7 +1,7 @@
 """Las series que se llevan mes a mes: global, solo SEPA y un rubro por division.
 
 Juan (22/10/2026): llevar por separado el numero con lo online y el que no lo
-tiene, y los rubros. Cada serie se encadena por su lado (operacion 9: el nivel
+tiene, y los rubros. Cada serie se encadena por su lado (operacion 10: el nivel
 multiplica las variaciones del mes). Una serie que arranca despues —lo online,
 desde noviembre— parte de 100 en su primer mes con dato; un hueco en el medio
 corta la cadena, porque seguir por arriba seria inventar ese mes.

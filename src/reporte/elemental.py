@@ -97,7 +97,7 @@ def rango_intercuartil(valores: list[float]) -> float:
     return q3 - q1
 
 
-# =========================================================== CRITICO 3 de 9 ===
+# ========================================================== CRITICO 3 de 10 ===
 # QUE HACE     descarta ratios sospechosos antes de promediar
 # FORMULA      1) tope absoluto: fuera si ratio >= tope o <= 1/tope
 #              2) dispersion: fuera si |log_ratio - mediana| > umbral x dispersion
@@ -193,7 +193,7 @@ def detectar_outliers(
     return limpios, descartes, umbral_usado
 
 
-# =========================================================== CRITICO 2 de 9 ===
+# ========================================================== CRITICO 2 de 10 ===
 # QUE HACE     la muestra emparejada: que quotes entran a la variacion
 # FORMULA      solo los quotes con precio en los DOS meses y los dos positivos
 # POR QUE ASI  un producto nuevo no tiene contra que compararse, y uno que
@@ -232,7 +232,7 @@ def emparejar(
     return relativos, descartes
 
 
-# =========================================================== CRITICO 4 de 9 ===
+# ========================================================== CRITICO 4 de 10 ===
 # QUE HACE     la variacion de una categoria elemental
 # FORMULA      exp( promedio( ln(precio_actual / precio_base) ) )
 # POR QUE ASI  media geometrica y no aritmetica: abajo no hay ponderadores y los
@@ -277,3 +277,46 @@ def indice_elemental(
         descartes=descartes,
         umbral_usado=umbral,
     )
+
+
+# ========================================================== CRITICO 5 de 10 ===
+# QUE HACE     junta en cada articulo el canal supermercado (el Jevons de SEPA)
+#              con el tradicional (las carnicerias del IPCVA)
+# FORMULA      I = I_super ^ s  x  I_tradicional ^ (1 - s),  s = parte del gasto
+#              del articulo hecha en supermercados (ENGHo 2017/18, tipo_negocio)
+# POR QUE ASI  es la formula 8 del INDEC: cada variedad se calcula por separado
+#              en cada tipo de negocio y se combinan con la proporcion fija de
+#              donde compran los hogares. Geometrica sobre relativos porque los
+#              niveles de las dos fuentes no se comparan (el IPCVA anota el
+#              precio mas bajo de cada corte; SEPA, el de lista de cada producto).
+# LO VERIFICA  tests/test_carnicerias.py::test_combina_los_dos_canales_con_la_proporcion_de_supermercados
+#              y test_sin_la_proporcion_de_supermercados_corta
+# FALLA ASI    sin la proporcion, la carne entera sale de DIA: la picada da -9,7%
+#              en agosto->septiembre porque DIA bajo el precio de lista, mientras
+#              las carnicerias, donde se compra el 56% de la carne vacuna, no se
+#              movieron. Una proporcion invertida (s por 1-s) da un numero tan
+#              plausible como el correcto.
+# ============================================================================
+def combinar_canales(
+    indices: dict[str, float],
+    tradicional: dict[str, float],
+    participacion_super: dict[str, float],
+) -> dict[str, float]:
+    """Los indices por articulo con el canal tradicional sumado donde lo hay.
+
+    Un articulo sin dato tradicional queda como estaba. Uno con dato tradicional
+    pero sin SEPA no se agrega: su peso es el del articulo medido en SEPA.
+    """
+    combinados = dict(indices)
+    for art, i_trad in tradicional.items():
+        if art not in indices:
+            continue
+        if art not in participacion_super:
+            raise ValueError(f"{art} tiene precio de carniceria y no tiene la proporcion "
+                             "de supermercados de la ENGHo")
+        s = participacion_super[art]
+        if not 0.0 <= s <= 1.0:
+            raise ValueError(f"la proporcion de supermercados de {art} es {s}: tiene "
+                             "que estar entre 0 y 1")
+        combinados[art] = math.exp(s * math.log(indices[art]) + (1 - s) * math.log(i_trad))
+    return combinados
